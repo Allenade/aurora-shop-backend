@@ -32,6 +32,7 @@ lerna-debug.log*
 # IDE - VSCode / Cursor (local only — do not publish tooling folders)
 .vscode/
 .cursor/
+.githooks/
 
 # dotenv environment variable files
 .env
