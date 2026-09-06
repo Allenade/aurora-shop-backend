@@ -29,12 +29,9 @@ lerna-debug.log*
 .settings/
 *.sublime-workspace
 
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+# IDE - VSCode / Cursor (local only — do not publish tooling folders)
+.vscode/
+.cursor/
 
 # dotenv environment variable files
 .env
@@ -42,6 +39,12 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+
+# Accidental TypeScript emit next to sources
+libs/**/*.js
+libs/**/*.js.map
+apps/**/*.js
+apps/**/*.js.map
 
 # temp directory
 .temp
