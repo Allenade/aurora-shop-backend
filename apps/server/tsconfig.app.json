@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/apps/server",
+    "declaration": false,
+    "baseUrl": "../..",
+    "paths": {
+      "@app/shared": ["libs/shared/src"],
+      "@app/shared/*": ["libs/shared/src/*"],
+      "@server/*": ["apps/server/src/*"]
+    }
+  },
+  "include": ["src/**/*", "../../libs/shared/src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+}
