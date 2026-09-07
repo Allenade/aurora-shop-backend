@@ -1,3 +1,5 @@
+name: aurora-shop-backend
+
 services:
   postgres:
     image: postgres:16
@@ -16,6 +18,15 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    volumes:
+      - aurora_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   aurora_pg:
+  aurora_redis_data:
