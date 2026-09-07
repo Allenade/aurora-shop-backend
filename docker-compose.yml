@@ -11,7 +11,9 @@ services:
       - aurora_pg:/var/lib/postgresql/data
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
+    container_name: aurora-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
 
