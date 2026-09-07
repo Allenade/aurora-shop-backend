@@ -3,9 +3,13 @@ import { z } from 'zod';
 const envSchema = z.object({
   PORT: z.string().default('4000'),
   HOST: z.string().default('0.0.0.0'),
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  NODE_ENV: z
+    .enum(['development', 'test', 'production'])
+    .default('development'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
-  DATABASE_URL: z.string().default('postgres://aurora:aurora@localhost:5432/aurora_shop'),
+  DATABASE_URL: z
+    .string()
+    .default('postgres://aurora:aurora@localhost:5432/aurora_shop'),
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   JWT_SECRET_KEY: z.string().default('aurora-dev-jwt-secret-change-me'),
@@ -39,6 +43,11 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional().default(''),
   RESEND_FROM_EMAIL: z.string().default('no-reply@aurora.local'),
   RESEND_FROM_NAME: z.string().default('Aurora Stores'),
+
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
+    .default('info'),
+  LOG_REQUESTS: z.coerce.boolean().default(true),
 
   SEED_ADMIN_EMAIL: z.string().default('admin@regaliaelectrical.ng'),
   SEED_BUYER_EMAIL: z.string().default('bayonuga@example.com'),
@@ -122,6 +131,10 @@ export function config() {
       apiKey: env.RESEND_API_KEY,
       fromEmail: env.RESEND_FROM_EMAIL,
       fromName: env.RESEND_FROM_NAME,
+    },
+    logging: {
+      level: env.LOG_LEVEL,
+      requestLoggerEnabled: env.LOG_REQUESTS,
     },
     seed: {
       adminEmail: env.SEED_ADMIN_EMAIL,

@@ -15,10 +15,14 @@ import { UserEntity } from '../user/entities/user.entity';
 @Controller('admin/overview')
 export class AdminController {
   constructor(
-    @InjectRepository(OrderEntity) private readonly orders: Repository<OrderEntity>,
-    @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
-    @InjectRepository(ProductEntity) private readonly products: Repository<ProductEntity>,
-    @InjectRepository(QuoteEntity) private readonly quotes: Repository<QuoteEntity>,
+    @InjectRepository(OrderEntity)
+    private readonly orders: Repository<OrderEntity>,
+    @InjectRepository(UserEntity)
+    private readonly users: Repository<UserEntity>,
+    @InjectRepository(ProductEntity)
+    private readonly products: Repository<ProductEntity>,
+    @InjectRepository(QuoteEntity)
+    private readonly quotes: Repository<QuoteEntity>,
     @InjectRepository(InventoryEntity)
     private readonly inventory: Repository<InventoryEntity>,
   ) {}
@@ -38,7 +42,9 @@ export class AdminController {
       this.quotes.count(),
     ]);
 
-    const unpaid = orderRows.filter((row) => row.paymentStatus === 'unpaid').length;
+    const unpaid = orderRows.filter(
+      (row) => row.paymentStatus === 'unpaid',
+    ).length;
     const paidTotal = orderRows
       .filter((row) => row.paymentStatus === 'paid')
       .reduce((sum, row) => sum + row.total, 0);
@@ -67,13 +73,21 @@ export class AdminController {
       }),
     }));
 
-    const stockRows = await this.inventory.find({ relations: { product: true } });
+    const stockRows = await this.inventory.find({
+      relations: { product: true },
+    });
     const alerts = stockRows
       .map((row) => {
         const qty = row.quantity;
         const min = row.minStock;
         const level =
-          qty <= 0 ? 'OUT OF STOCK' : qty <= Math.max(1, Math.floor(min / 2)) ? 'CRITICAL' : qty <= min ? 'LOW STOCK' : null;
+          qty <= 0
+            ? 'OUT OF STOCK'
+            : qty <= Math.max(1, Math.floor(min / 2))
+              ? 'CRITICAL'
+              : qty <= min
+                ? 'LOW STOCK'
+                : null;
         if (!level) return null;
         return {
           id: row.productId,
@@ -81,7 +95,8 @@ export class AdminController {
           level,
           qty,
           minStock: min,
-          fillPercent: min <= 0 ? 0 : Math.min(100, Math.round((qty / min) * 100)),
+          fillPercent:
+            min <= 0 ? 0 : Math.min(100, Math.round((qty / min) * 100)),
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row))

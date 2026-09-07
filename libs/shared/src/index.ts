@@ -10,6 +10,7 @@ export {
 export { BaseRepository } from './database/base.repository';
 export { DatabaseModule } from './database/database.module';
 export { ErrorResponseDto } from './common/dto/error-response.dto';
+export { createLoggerModuleOpts, getPinoParams } from './config/logger.config';
 export {
   AuditLogType,
   AccessAuditAction,

@@ -11,9 +11,16 @@ import type { EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
 import { InventoryService } from '../inventory/inventory.service';
 import { ProductEntity } from '../catalog/entities/product.entity';
-import { TransactionProvider, TransactionStatus } from '../payment-gateway/_contract/payment.types';
+import {
+  TransactionProvider,
+  TransactionStatus,
+} from '../payment-gateway/_contract/payment.types';
 import { TransactionService } from '../transaction/transaction.service';
-import { OrderEntity, type OrderStatus, type PaymentStatus } from './entities/order.entity';
+import {
+  OrderEntity,
+  type OrderStatus,
+  type PaymentStatus,
+} from './entities/order.entity';
 
 export type CheckoutInput = {
   userId: string;
@@ -57,7 +64,8 @@ export class OrderService {
         where: { slug: item.slug },
         relations: { inventory: true },
       });
-      if (!product) throw new BadRequestException(`Unknown product ${item.slug}`);
+      if (!product)
+        throw new BadRequestException(`Unknown product ${item.slug}`);
       await this.inventory.reserve(product.id, item.qty);
       const line = {
         productId: product.id,
@@ -76,7 +84,9 @@ export class OrderService {
       input.deliveryMethod === 'express'
         ? this.config.get('commerce.deliveryExpress', { infer: true })
         : this.config.get('commerce.deliveryStandard', { infer: true });
-    const tax = Math.round(subtotal * this.config.get('commerce.vatRate', { infer: true }));
+    const tax = Math.round(
+      subtotal * this.config.get('commerce.vatRate', { infer: true }),
+    );
     const total = subtotal + shipping + tax;
     const year = new Date().getFullYear();
     const orderNumber = `ORD-${year}-${randomInt(100, 999)}`;
@@ -104,14 +114,21 @@ export class OrderService {
         items: lines,
         timeline: [
           { id: 'placed', label: 'Order placed', at: now, status: 'done' },
-          { id: 'payment', label: 'Payment confirmation', at: '', status: 'current' },
+          {
+            id: 'payment',
+            label: 'Payment confirmation',
+            at: '',
+            status: 'current',
+          },
           { id: 'ship', label: 'Shipped', at: '', status: 'upcoming' },
           { id: 'deliver', label: 'Delivered', at: '', status: 'upcoming' },
         ],
       }),
     );
 
-    const frontend = this.config.get('frontend.allowedOrigins', { infer: true })[0];
+    const frontend = this.config.get('frontend.allowedOrigins', {
+      infer: true,
+    })[0];
     const tx = await this.transactions.create({
       amount: total,
       provider:
@@ -180,7 +197,9 @@ export class OrderService {
         year: 'numeric',
       }),
       shippingMethod:
-        row.deliveryMethod === 'express' ? 'Express Delivery' : 'Standard Delivery',
+        row.deliveryMethod === 'express'
+          ? 'Express Delivery'
+          : 'Standard Delivery',
       destination: row.shippingAddress,
       timeline: (row.timeline ?? []).map((step) => ({
         id: step.id,
@@ -228,7 +247,9 @@ export class OrderService {
 
   @Cron(CronExpression.EVERY_30_MINUTES)
   async cancelUnpaid() {
-    const hours = this.config.get('commerce.unpaidCancelHours', { infer: true });
+    const hours = this.config.get('commerce.unpaidCancelHours', {
+      infer: true,
+    });
     const cutoff = new Date(Date.now() - hours * 3600_000);
     const stale = await this.orders.find({
       where: {

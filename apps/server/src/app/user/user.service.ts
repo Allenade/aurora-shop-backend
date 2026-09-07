@@ -20,7 +20,9 @@ export class UserService {
         company: user.companyName ?? '—',
         type: user.type,
         status: user.status === UserStatus.ACTIVE ? 'ACTIVE' : 'Suspended',
-        initials: `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U',
+        initials:
+          `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() ||
+          'U',
         orders: 0,
         totalSpent: '—',
         joined: user.createdAt.toLocaleDateString('en-US', {

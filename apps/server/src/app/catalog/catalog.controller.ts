@@ -53,7 +53,7 @@ export class CatalogController {
     description: 'Admin catalog create.',
   })
   create(@Body() body: Record<string, unknown>) {
-    return this.catalog.create(body as never);
+    return this.catalog.create(body);
   }
 
   @Patch('admin/products/:id')
@@ -64,7 +64,7 @@ export class CatalogController {
     description: 'Admin catalog update.',
   })
   update(@Param('id') id: string, @Body() body: Record<string, unknown>) {
-    return this.catalog.update(id, body as never);
+    return this.catalog.update(id, body);
   }
 
   @Delete('admin/products/:id')

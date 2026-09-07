@@ -1,0 +1,36 @@
+#!/bin/sh
+
+# Get the commit message (first line only)
+commit_msg=$(head -n 1 "$1")
+
+# Allow merge commits
+if echo "$commit_msg" | grep -qE "^Merge "; then
+  exit 0
+fi
+
+# Reject agent co-author trailers
+if grep -iqE "Co-authored-by:.*(cursor|bot|copilot|claude|chatgpt|agent)" "$1"; then
+  echo ""
+  echo "ERROR: AI agent co-author attribution is not permitted on this repository."
+  echo ""
+  exit 1
+fi
+
+# Validate conventional commit format: type(scope): description or type: description
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([a-zA-Z0-9_.-]+\))?!?: .+$"; then
+  echo ""
+  echo "ERROR: Invalid commit message format."
+  echo ""
+  echo "Expected: <type>(<scope>): <description>  or  <type>: <description>"
+  echo ""
+  echo "Allowed types: feat, fix, chore, docs, style, refactor, perf, test, build, ci, revert"
+  echo ""
+  echo "Examples:"
+  echo "  feat(auth): Add refresh token rotation"
+  echo "  fix(order): Prevent double checkout submission"
+  echo "  chore(deps): Update dependencies"
+  echo ""
+  echo "Your message was: $commit_msg"
+  echo ""
+  exit 1
+fi

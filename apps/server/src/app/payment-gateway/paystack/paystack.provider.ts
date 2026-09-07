@@ -59,7 +59,10 @@ export class PaystackProvider implements PaymentProvider {
   }
 
   extractCallbackReference(payload: unknown): string | null {
-    const body = payload as { data?: { reference?: string }; reference?: string };
+    const body = payload as {
+      data?: { reference?: string };
+      reference?: string;
+    };
     return body?.data?.reference ?? body?.reference ?? null;
   }
 

@@ -24,7 +24,7 @@ export class ProcurementController {
     @CurrentUser('sub') userId: string,
     @Body() body: Record<string, unknown>,
   ) {
-    return this.procurement.create(userId, body as never);
+    return this.procurement.create(userId, body);
   }
 
   @Get('quotes')

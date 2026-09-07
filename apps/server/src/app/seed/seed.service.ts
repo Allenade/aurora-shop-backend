@@ -1,7 +1,13 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Action, Resource, UserStatus, UserType, type EnvTypes } from '@app/shared';
+import {
+  Action,
+  Resource,
+  UserStatus,
+  UserType,
+  type EnvTypes,
+} from '@app/shared';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { ADMIN_GRANTS, PROCUREMENT_GRANTS } from '../auth/auth.module';
@@ -11,7 +17,9 @@ import { RoleEntity } from '../role/entities/role.entity';
 import { UserRoleEntity } from '../role/entities/user-role.entity';
 import { UserEntity } from '../user/entities/user.entity';
 
-const CATALOG: Array<Partial<ProductEntity> & { quantity: number; minStock: number }> = [
+const CATALOG: Array<
+  Partial<ProductEntity> & { quantity: number; minStock: number }
+> = [
   {
     slug: 'arduino-uno-r3',
     name: 'Arduino Uno R3',
@@ -114,10 +122,12 @@ export class SeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SeedService.name);
 
   constructor(
-    @InjectRepository(RoleEntity) private readonly roles: Repository<RoleEntity>,
+    @InjectRepository(RoleEntity)
+    private readonly roles: Repository<RoleEntity>,
     @InjectRepository(RolePermissionEntity)
     private readonly grants: Repository<RolePermissionEntity>,
-    @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
+    @InjectRepository(UserEntity)
+    private readonly users: Repository<UserEntity>,
     @InjectRepository(UserRoleEntity)
     private readonly assignments: Repository<UserRoleEntity>,
     @InjectRepository(ProductEntity)
@@ -133,7 +143,11 @@ export class SeedService implements OnApplicationBootstrap {
   }
 
   private async seedRoles() {
-    await this.ensureRole('procurement', 'Procurement Buyer', PROCUREMENT_GRANTS);
+    await this.ensureRole(
+      'procurement',
+      'Procurement Buyer',
+      PROCUREMENT_GRANTS,
+    );
     await this.ensureRole('super_admin', 'Super Admin', [
       ...ADMIN_GRANTS,
       { action: Action.MANAGE, resource: Resource.ALL },
@@ -150,9 +164,7 @@ export class SeedService implements OnApplicationBootstrap {
     const existing = await this.grants.find({ where: { roleId: role.id } });
     if (existing.length > 0) return role;
     await this.grants.save(
-      grants.map((grant) =>
-        this.grants.create({ roleId: role!.id, ...grant }),
-      ),
+      grants.map((grant) => this.grants.create({ roleId: role.id, ...grant })),
     );
     return role;
   }
@@ -219,7 +231,9 @@ export class SeedService implements OnApplicationBootstrap {
 
   private async seedCatalog() {
     for (const item of CATALOG) {
-      const exists = await this.products.findOne({ where: { slug: item.slug } });
+      const exists = await this.products.findOne({
+        where: { slug: item.slug },
+      });
       if (exists) continue;
       await this.products.save(
         this.products.create({

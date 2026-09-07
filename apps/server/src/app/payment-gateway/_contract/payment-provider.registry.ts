@@ -1,8 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  type PaymentProvider,
-  TransactionProvider,
-} from './payment.types';
+import { type PaymentProvider, TransactionProvider } from './payment.types';
 
 export const PAYMENT_PROVIDERS_TOKEN = 'PAYMENT_PROVIDERS';
 

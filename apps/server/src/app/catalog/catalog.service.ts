@@ -81,7 +81,9 @@ export class CatalogService {
     return toShopProduct(product);
   }
 
-  async create(input: Partial<ProductEntity> & { quantity?: number; minStock?: number }) {
+  async create(
+    input: Partial<ProductEntity> & { quantity?: number; minStock?: number },
+  ) {
     const product = this.products.create({
       ...input,
       inventory: {

@@ -58,7 +58,11 @@ export class ProcurementService {
       internalId: row.id,
       title: row.title,
       status: LABEL[row.status],
-      amount: row.budget ? (row.budget.startsWith('₦') ? row.budget : `₦${row.budget}`) : '—',
+      amount: row.budget
+        ? row.budget.startsWith('₦')
+          ? row.budget
+          : `₦${row.budget}`
+        : '—',
       date: row.createdAt.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',

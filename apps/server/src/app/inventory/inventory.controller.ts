@@ -1,5 +1,10 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProperty,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Action, Resource } from '@app/shared';
 import { IsInt, Min } from 'class-validator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';

@@ -56,20 +56,21 @@ import { TokenService } from './token/token.service';
 })
 export class AuthModule {}
 
-export const PROCUREMENT_GRANTS: Array<{ action: Action; resource: Resource }> = [
-  { action: Action.READ, resource: Resource.DASHBOARD },
-  { action: Action.READ, resource: Resource.SHOP },
-  { action: Action.LIST, resource: Resource.SHOP },
-  { action: Action.READ, resource: Resource.ORDER },
-  { action: Action.LIST, resource: Resource.ORDER },
-  { action: Action.CREATE, resource: Resource.ORDER },
-  { action: Action.READ, resource: Resource.TRACK_ORDER },
-  { action: Action.READ, resource: Resource.PROCUREMENT },
-  { action: Action.LIST, resource: Resource.PROCUREMENT },
-  { action: Action.CREATE, resource: Resource.QUOTE },
-  { action: Action.READ, resource: Resource.SETTINGS },
-  { action: Action.UPDATE, resource: Resource.SETTINGS },
-];
+export const PROCUREMENT_GRANTS: Array<{ action: Action; resource: Resource }> =
+  [
+    { action: Action.READ, resource: Resource.DASHBOARD },
+    { action: Action.READ, resource: Resource.SHOP },
+    { action: Action.LIST, resource: Resource.SHOP },
+    { action: Action.READ, resource: Resource.ORDER },
+    { action: Action.LIST, resource: Resource.ORDER },
+    { action: Action.CREATE, resource: Resource.ORDER },
+    { action: Action.READ, resource: Resource.TRACK_ORDER },
+    { action: Action.READ, resource: Resource.PROCUREMENT },
+    { action: Action.LIST, resource: Resource.PROCUREMENT },
+    { action: Action.CREATE, resource: Resource.QUOTE },
+    { action: Action.READ, resource: Resource.SETTINGS },
+    { action: Action.UPDATE, resource: Resource.SETTINGS },
+  ];
 
 export const ADMIN_GRANTS: Array<{ action: Action; resource: Resource }> = [
   { action: Action.MANAGE, resource: Resource.ALL },
