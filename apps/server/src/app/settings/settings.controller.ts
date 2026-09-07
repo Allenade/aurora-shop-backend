@@ -30,7 +30,8 @@ export class SettingsController {
   async profile(@CurrentUser('sub') userId: string) {
     const user = await this.users.findById(userId);
     const fullName = `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim();
-    const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
+    const initials =
+      `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
     return {
       fullName,
       email: user?.email,

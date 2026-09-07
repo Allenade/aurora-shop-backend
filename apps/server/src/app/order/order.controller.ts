@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Action, Resource, UserType } from '@app/shared';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -18,7 +26,8 @@ export class OrderController {
   @ApiOperation({
     operationId: 'createCheckout',
     summary: 'Create Checkout',
-    description: 'Server-priced checkout. Creates a pending ledger transaction.',
+    description:
+      'Server-priced checkout. Creates a pending ledger transaction.',
   })
   checkout(
     @CurrentUser() user: JwtPayload,

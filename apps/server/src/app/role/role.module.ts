@@ -7,7 +7,11 @@ import { RoleRepository } from './repositories/role.repository';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RoleEntity, RolePermissionEntity, UserRoleEntity]),
+    TypeOrmModule.forFeature([
+      RoleEntity,
+      RolePermissionEntity,
+      UserRoleEntity,
+    ]),
   ],
   providers: [RoleRepository],
   exports: [RoleRepository, TypeOrmModule],

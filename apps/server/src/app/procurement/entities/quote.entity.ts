@@ -2,11 +2,7 @@ import { DatabaseEntity, WithTimestamps } from '@app/shared';
 import { Column, Entity } from 'typeorm';
 
 export type QuoteStatus =
-  | 'draft'
-  | 'pending'
-  | 'under_review'
-  | 'approved'
-  | 'rejected';
+  'draft' | 'pending' | 'under_review' | 'approved' | 'rejected';
 
 @Entity('quote')
 @WithTimestamps()

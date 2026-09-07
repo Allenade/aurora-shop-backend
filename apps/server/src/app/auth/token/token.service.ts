@@ -1,11 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import {
-  AccessAuditAction,
-  AuditLogType,
-  type EnvTypes,
-} from '@app/shared';
+import { AccessAuditAction, AuditLogType, type EnvTypes } from '@app/shared';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { IsNull } from 'typeorm';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -36,11 +32,17 @@ export class TokenService {
     });
   }
 
-  async generateRefreshToken(userId: string, familyId?: string, rememberMe?: boolean) {
+  async generateRefreshToken(
+    userId: string,
+    familyId?: string,
+    rememberMe?: boolean,
+  ) {
     const rawToken = randomBytes(64).toString('hex');
     const family = familyId ?? randomUUID();
     const expiresInMs = rememberMe
-      ? this.configService.get('auth.jwtRefreshRememberExpiresIn', { infer: true })
+      ? this.configService.get('auth.jwtRefreshRememberExpiresIn', {
+          infer: true,
+        })
       : this.configService.get('auth.jwtRefreshExpiresIn', { infer: true });
 
     await this.refreshTokenRepository.create({
@@ -99,8 +101,8 @@ export class TokenService {
     }
 
     await this.refreshTokenRepository.updateWhere(
-      { id: existing.id } as any,
-      { revokedAt: new Date() } as any,
+      { id: existing.id },
+      { revokedAt: new Date() },
     );
 
     const accessToken = this.generateAccessToken(existing.user);
@@ -122,15 +124,15 @@ export class TokenService {
 
   async revokeAllUserTokens(userId: string) {
     await this.refreshTokenRepository.updateWhere(
-      { userId, revokedAt: IsNull() } as any,
-      { revokedAt: new Date() } as any,
+      { userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
     );
   }
 
   async revokeTokenFamily(familyId: string) {
     await this.refreshTokenRepository.updateWhere(
-      { familyId, revokedAt: IsNull() } as any,
-      { revokedAt: new Date() } as any,
+      { familyId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
     );
   }
 

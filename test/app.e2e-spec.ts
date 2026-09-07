@@ -22,7 +22,8 @@ describe('Health (e2e)', () => {
       .get('/api/v1/health')
       .expect(200)
       .expect((res) => {
-        expect(res.body.ok).toBe(true);
+        const body = res.body as { ok?: boolean };
+        expect(body.ok).toBe(true);
       });
   });
 

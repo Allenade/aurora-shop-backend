@@ -15,7 +15,6 @@ import {
 import * as bcrypt from 'bcrypt';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { RoleRepository } from '../role/repositories/role.repository';
-import { UserEntity } from '../user/entities/user.entity';
 import { UserRepository } from '../user/repositories/user.repository';
 import { AbilityFactoryService } from './ability/ability-factory.service';
 import type { ChangePasswordDto, RegisterDto } from './dto/register.dto';
@@ -102,11 +101,21 @@ export class AuthService {
   }
 
   async verifyOtp(email: string, code: string) {
-    const payload = await this.otp.verify(email, code);
-    if (!payload) {
+    const rawPayload = await this.otp.verify(email, code);
+    if (!rawPayload) {
       throw new UnauthorizedException('Invalid or expired code');
     }
-    const normalized = String(payload.email ?? email).toLowerCase();
+    const payload = rawPayload as {
+      email?: string;
+      passwordHash?: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      companyName?: string;
+      industry?: string;
+      state?: string;
+    };
+    const normalized = (payload.email ?? email).toLowerCase();
     let user = await this.users.findByEmail(normalized);
     if (!user) {
       user = await this.createVerifiedUser(payload);
@@ -158,21 +167,30 @@ export class AuthService {
     return { ok: true };
   }
 
-  private async createVerifiedUser(payload: Record<string, unknown>) {
+  private async createVerifiedUser(payload: {
+    email?: string;
+    passwordHash?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    companyName?: string;
+    industry?: string;
+    state?: string;
+  }) {
     const role = await this.roles.findBySlug('procurement');
     const user = await this.users.create({
-      email: String(payload.email),
-      passwordHash: String(payload.passwordHash),
-      firstName: String(payload.firstName ?? 'Buyer'),
-      lastName: String(payload.lastName ?? 'User'),
-      phone: payload.phone ? String(payload.phone) : undefined,
-      companyName: payload.companyName ? String(payload.companyName) : undefined,
-      industry: payload.industry ? String(payload.industry) : undefined,
-      state: payload.state ? String(payload.state) : undefined,
+      email: payload.email ?? '',
+      passwordHash: payload.passwordHash ?? '',
+      firstName: payload.firstName ?? 'Buyer',
+      lastName: payload.lastName ?? 'User',
+      phone: payload.phone,
+      companyName: payload.companyName,
+      industry: payload.industry,
+      state: payload.state,
       type: UserType.PROCUREMENT,
       status: UserStatus.ACTIVE,
       emailVerified: true,
-      roleAssignments: role ? [{ roleId: role.id } as never] : [],
+      roleAssignments: role ? [{ roleId: role.id }] : [],
     });
     if (role) {
       user.roleAssignments = [

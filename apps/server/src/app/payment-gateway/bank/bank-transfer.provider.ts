@@ -16,15 +16,15 @@ export class BankTransferProvider implements PaymentProvider {
 
   constructor(private readonly config: ConfigService<EnvTypes, true>) {}
 
-  async register(ctx: RegisterContext): Promise<RegisterResult> {
-    return {
+  register(ctx: RegisterContext): Promise<RegisterResult> {
+    return Promise.resolve({
       externalReference: ctx.reference,
       bank: {
         bank: this.config.get('bank.name', { infer: true }),
         accountName: this.config.get('bank.accountName', { infer: true }),
         accountNumber: this.config.get('bank.accountNumber', { infer: true }),
       },
-    };
+    });
   }
 
   extractCallbackReference(payload: unknown): string | null {

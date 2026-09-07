@@ -26,9 +26,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       typeof payload === 'string'
         ? payload
         : payload && typeof payload === 'object' && 'message' in payload
-          ? Array.isArray((payload as { message: unknown }).message)
-            ? ((payload as { message: string[] }).message).join(', ')
-            : String((payload as { message: unknown }).message)
+          ? Array.isArray(payload.message)
+            ? (payload as { message: string[] }).message.join(', ')
+            : String(payload.message)
           : 'Internal server error';
 
     const details =

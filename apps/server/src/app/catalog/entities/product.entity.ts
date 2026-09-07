@@ -2,7 +2,8 @@ import { DatabaseEntity, WithTimestamps } from '@app/shared';
 import { Column, Entity, OneToOne } from 'typeorm';
 import { InventoryEntity } from '../../inventory/entities/inventory.entity';
 
-export type StockStatus = 'in_stock' | 'low_stock' | 'critical' | 'out_of_stock';
+export type StockStatus =
+  'in_stock' | 'low_stock' | 'critical' | 'out_of_stock';
 
 @Entity('product')
 @WithTimestamps()

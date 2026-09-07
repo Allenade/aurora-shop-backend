@@ -29,7 +29,8 @@ export class AuthController {
   @ApiOperation({
     operationId: 'loginUser',
     summary: 'Login User',
-    description: 'Authenticate with email and password. Tokens are for the BFF only.',
+    description:
+      'Authenticate with email and password. Tokens are for the BFF only.',
   })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto.email, dto.password, dto.rememberMe);

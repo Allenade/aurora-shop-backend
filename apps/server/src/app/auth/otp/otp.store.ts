@@ -52,7 +52,9 @@ export class OtpStore implements OnModuleDestroy {
 
     const code = this.generateCode();
     const expiryMinutes = this.config.get('otp.expiryMinutes', { infer: true });
-    const cooldown = this.config.get('otp.resendCooldownSeconds', { infer: true });
+    const cooldown = this.config.get('otp.resendCooldownSeconds', {
+      infer: true,
+    });
     const record: OtpRecord = {
       hash: this.hash(code),
       attempts: 0,
@@ -86,7 +88,7 @@ export class OtpStore implements OnModuleDestroy {
     return payload ?? {};
   }
 
-  async onModuleDestroy() {
+  onModuleDestroy() {
     if (this.redis) {
       this.redis.disconnect();
       this.redis = null;

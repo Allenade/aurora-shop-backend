@@ -17,6 +17,7 @@ abstract class DatabaseEntity {
 }
 
 function WithTimestamps(): ClassDecorator {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   return (target: Function) => {
     const proto = target.prototype as Record<string, unknown>;
     CreateDateColumn({ name: 'created_at' })(proto, 'createdAt');

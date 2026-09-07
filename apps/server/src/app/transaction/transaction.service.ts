@@ -1,10 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  AuditLogType,
-  PaymentAuditAction,
-} from '@app/shared';
+import { AuditLogType, PaymentAuditAction } from '@app/shared';
 import { randomInt } from 'crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -59,8 +56,9 @@ export class TransactionService {
       reference,
     });
     row.externalReference = registered.externalReference ?? reference;
-    row.authorizationUrl = registered.authorizationUrl ?? registered.redirectUrl;
-    row.metadata = registered as unknown as Record<string, unknown>;
+    row.authorizationUrl =
+      registered.authorizationUrl ?? registered.redirectUrl;
+    row.metadata = registered;
     await this.rows.save(row);
 
     this.audit.log({
@@ -132,9 +130,7 @@ export class TransactionService {
 
   private async markOrderPaid(row: TransactionEntity) {
     const order = await this.orders.findOne({
-      where: row.orderId
-        ? { id: row.orderId }
-        : { orderNumber: row.reference },
+      where: row.orderId ? { id: row.orderId } : { orderNumber: row.reference },
     });
     if (!order || order.paymentStatus === 'paid') return;
     order.paymentStatus = 'paid';

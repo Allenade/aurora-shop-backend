@@ -11,10 +11,12 @@ import type {
 @Injectable()
 export class AbilityFactoryService {
   toSessionUser(user: UserEntity): SessionUser {
-    const roles: SessionRole[] = (user.roleAssignments ?? []).map((assignment) => ({
-      id: assignment.role.id,
-      name: assignment.role.name,
-    }));
+    const roles: SessionRole[] = (user.roleAssignments ?? []).map(
+      (assignment) => ({
+        id: assignment.role.id,
+        name: assignment.role.name,
+      }),
+    );
 
     const permissions: SessionPermission[] = [];
     for (const assignment of user.roleAssignments ?? []) {
@@ -48,12 +50,14 @@ export class AbilityFactoryService {
   }
 
   can(user: SessionUser, action: Action, resource: Resource) {
+    const act = action as string;
+    const res = resource as string;
     return user.permissions.some(
       (permission) =>
-        (permission.action === Action.MANAGE &&
-          (permission.resource === Resource.ALL ||
-            permission.resource === resource)) ||
-        (permission.action === action && permission.resource === resource),
+        (permission.action === (Action.MANAGE as string) &&
+          (permission.resource === (Resource.ALL as string) ||
+            permission.resource === res)) ||
+        (permission.action === act && permission.resource === res),
     );
   }
 }
