@@ -5,6 +5,7 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "packageManager": "pnpm@10.15.0",
   "scripts": {
     "prepare": "husky",
     "hooks:install": "git config core.hooksPath .githooks && chmod +x .githooks/*",
