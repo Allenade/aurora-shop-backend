@@ -8,6 +8,9 @@
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "prepare": "husky",
+    "infra": "docker compose up -d redis",
+    "infra:down": "docker compose stop redis",
+    "infra:logs": "docker compose logs -f redis",
     "hooks:install": "git config core.hooksPath .githooks && chmod +x .githooks/*",
     "prebuild": "pnpm run bus:extract",
     "bus:extract": "chowbea-axios extract",
