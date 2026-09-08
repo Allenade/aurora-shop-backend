@@ -133,10 +133,11 @@ export class SettingsController {
     description: 'Paid invoices from the order ledger. No raw cards stored.',
   })
   async billing(@CurrentUser() user: JwtPayload) {
-    const orders = await this.orders.listForUser(
+    const result = await this.orders.listForUser(
       user.sub,
       user.type === UserType.ADMIN,
     );
+    const orders = Array.isArray(result) ? result : result.items;
     return {
       methods: [],
       invoices: orders

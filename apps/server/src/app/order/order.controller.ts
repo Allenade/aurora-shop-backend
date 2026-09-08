@@ -41,10 +41,22 @@ export class OrderController {
   @ApiOperation({
     operationId: 'listOrders',
     summary: 'List Orders',
-    description: 'Orders for the current user, or all orders for admins.',
+    description:
+      'Orders for the current user, or all orders for admins. Pass page/limit for a paginated `{ items, total, page, limit, pageCount }` response; omit them to receive a plain array.',
   })
-  list(@CurrentUser() user: JwtPayload) {
-    return this.orders.listForUser(user.sub, user.type === UserType.ADMIN);
+  list(
+    @CurrentUser() user: JwtPayload,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.orders.listForUser(user.sub, user.type === UserType.ADMIN, {
+      q,
+      status,
+      page: page !== undefined ? Number(page) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+    });
   }
 
   @Get('orders/:id')

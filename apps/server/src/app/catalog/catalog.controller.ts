@@ -24,14 +24,25 @@ export class CatalogController {
   @ApiOperation({
     operationId: 'listProducts',
     summary: 'List Products',
-    description: 'Shop catalog with optional filters.',
+    description:
+      'Shop catalog with optional filters. Pass page/limit for a paginated `{ items, total, page, limit, pageCount }` response; omit them to receive a plain array.',
   })
   list(
     @Query('category') category?: string,
     @Query('brand') brand?: string,
     @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.catalog.list({ category, brand, q });
+    return this.catalog.list({
+      category,
+      brand,
+      q,
+      status,
+      page: page !== undefined ? Number(page) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+    });
   }
 
   @Get('products/:slug')

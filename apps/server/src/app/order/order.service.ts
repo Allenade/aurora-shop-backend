@@ -162,12 +162,61 @@ export class OrderService {
     };
   }
 
-  async listForUser(userId: string, isAdmin: boolean) {
-    const rows = await this.orders.find({
-      where: isAdmin ? {} : { userId },
-      order: { createdAt: 'DESC' },
-    });
-    return rows.map((row) => this.toDto(row));
+  async listForUser(
+    userId: string,
+    isAdmin: boolean,
+    query?: {
+      q?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const qb = this.orders
+      .createQueryBuilder('o')
+      .orderBy('o.createdAt', 'DESC');
+
+    if (!isAdmin) {
+      qb.andWhere('o.userId = :userId', { userId });
+    }
+
+    if (query?.q) {
+      qb.andWhere(
+        `(o.orderNumber ILIKE :q OR o.trackingNumber ILIKE :q OR o.shippingName ILIKE :q OR o.shippingEmail ILIKE :q OR COALESCE(o.transactionReference, '') ILIKE :q)`,
+        { q: `%${query.q}%` },
+      );
+    }
+
+    if (
+      query?.status === 'pending' ||
+      query?.status === 'in_transit' ||
+      query?.status === 'delivered' ||
+      query?.status === 'cancelled'
+    ) {
+      qb.andWhere('o.status = :status', { status: query.status });
+    }
+
+    const paginate =
+      query?.page !== undefined || query?.limit !== undefined;
+    if (!paginate) {
+      const rows = await qb.getMany();
+      return rows.map((row) => this.toDto(row));
+    }
+
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(query?.limit) || 10));
+    const total = await qb.clone().getCount();
+    const rows = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+    return {
+      items: rows.map((row) => this.toDto(row)),
+      total,
+      page,
+      limit,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   async getById(id: string, userId: string, isAdmin: boolean) {

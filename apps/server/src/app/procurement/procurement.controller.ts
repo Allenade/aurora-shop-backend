@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Action, Resource, UserType } from '@app/shared';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -32,10 +40,22 @@ export class ProcurementController {
   @ApiOperation({
     operationId: 'listQuotes',
     summary: 'List Quotes',
-    description: 'Buyer quotes or the admin queue.',
+    description:
+      'Buyer quotes or the admin queue. Pass page/limit for a paginated `{ items, total, page, limit, pageCount, awaitingReview }` response; omit them to receive a plain array.',
   })
-  list(@CurrentUser() user: JwtPayload) {
-    return this.procurement.list(user.sub, user.type === UserType.ADMIN);
+  list(
+    @CurrentUser() user: JwtPayload,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.procurement.list(user.sub, user.type === UserType.ADMIN, {
+      q,
+      status,
+      page: page !== undefined ? Number(page) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+    });
   }
 
   @Patch('admin/quotes/:id/status')
