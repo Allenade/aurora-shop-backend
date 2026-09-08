@@ -44,6 +44,14 @@ const envSchema = z.object({
   RESEND_FROM_EMAIL: z.string().default('no-reply@aurora.local'),
   RESEND_FROM_NAME: z.string().default('Aurora Stores'),
 
+  CLOUDFLARE_ACCOUNT_ID: z.string().optional().default(''),
+  R2_ACCESS_KEY_ID: z.string().optional().default(''),
+  R2_SECRET_ACCESS_KEY: z.string().optional().default(''),
+  R2_BUCKET_NAME: z.string().default('aurorashop090'),
+  R2_PUBLIC_BASE_URL: z
+    .string()
+    .default('https://pub-80fb763d2cac40069bedc39977ed512c.r2.dev'),
+
   LOG_LEVEL: z
     .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
     .default('info'),
@@ -135,6 +143,13 @@ export function config() {
     logging: {
       level: env.LOG_LEVEL,
       requestLoggerEnabled: env.LOG_REQUESTS,
+    },
+    storage: {
+      accountId: env.CLOUDFLARE_ACCOUNT_ID,
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      bucket: env.R2_BUCKET_NAME,
+      publicBaseUrl: env.R2_PUBLIC_BASE_URL.replace(/\/+$/, ''),
     },
     seed: {
       adminEmail: env.SEED_ADMIN_EMAIL,

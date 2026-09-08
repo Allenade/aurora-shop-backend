@@ -15,6 +15,7 @@ import { PaymentGatewayModule } from './app/payment-gateway/payment-gateway.modu
 import { ProcurementModule } from './app/procurement/procurement.module';
 import { RoleModule } from './app/role/role.module';
 import { SeedModule } from './app/seed/seed.module';
+import { StorageModule } from './app/storage/storage.module';
 import { SettingsModule } from './app/settings/settings.module';
 import { TransactionModule } from './app/transaction/transaction.module';
 import { UserModule } from './app/user/user.module';
@@ -46,6 +47,7 @@ import { UserModule } from './app/user/user.module';
     SettingsModule,
     AdminModule,
     SeedModule,
+    StorageModule,
   ],
 })
 export class AppModule {}
