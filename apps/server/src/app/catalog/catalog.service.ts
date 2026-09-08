@@ -96,8 +96,7 @@ export class CatalogService {
       }
     }
 
-    const paginate =
-      query?.page !== undefined || query?.limit !== undefined;
+    const paginate = query?.page !== undefined || query?.limit !== undefined;
     if (!paginate) {
       const rows = await qb.getMany();
       return rows.map(toShopProduct);

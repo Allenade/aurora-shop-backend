@@ -67,8 +67,7 @@ export class InventoryService {
       }
     }
 
-    const paginate =
-      query?.page !== undefined || query?.limit !== undefined;
+    const paginate = query?.page !== undefined || query?.limit !== undefined;
     if (!paginate) {
       const rows = await qb.getMany();
       return rows.map((product) => this.toListItem(product));

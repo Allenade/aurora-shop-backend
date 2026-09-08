@@ -41,8 +41,7 @@ export class UserService {
       qb.andWhere('user.status = :status', { status: UserStatus.SUSPENDED });
     }
 
-    const paginate =
-      query?.page !== undefined || query?.limit !== undefined;
+    const paginate = query?.page !== undefined || query?.limit !== undefined;
 
     const mapRows = async (rows: UserEntity[]) => {
       const ids = rows.map((user) => user.id);
@@ -83,9 +82,7 @@ export class UserService {
             'U',
           orders: metric.orders,
           totalSpent:
-            metric.spent > 0
-              ? `₦${metric.spent.toLocaleString('en-NG')}`
-              : '—',
+            metric.spent > 0 ? `₦${metric.spent.toLocaleString('en-NG')}` : '—',
           joined: user.createdAt.toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',

@@ -193,7 +193,6 @@ const CATALOG: Array<
   },
 ];
 
-
 const DUMMY_BUYERS: Array<{
   email: string;
   firstName: string;
@@ -559,7 +558,7 @@ export class SeedService implements OnApplicationBootstrap {
     let created = 0;
 
     for (let i = 0; i < buyers.length; i += 1) {
-      const buyer = buyers[i]!;
+      const buyer = buyers[i];
       const orderCount = (i % 3) + 1;
       for (let n = 0; n < orderCount; n += 1) {
         const idempotencyKey = `seed-order-${buyer.email}-${n + 1}`;
@@ -568,7 +567,7 @@ export class SeedService implements OnApplicationBootstrap {
         });
         if (existing) continue;
 
-        const basket = baskets[(i + n) % baskets.length]!;
+        const basket = baskets[(i + n) % baskets.length];
         const lines = basket
           .map((entry) => {
             const product = bySlug.get(entry.slug);
@@ -594,7 +593,7 @@ export class SeedService implements OnApplicationBootstrap {
         }>;
         if (lines.length === 0) continue;
 
-        const meta = fulfillment[(i + n) % fulfillment.length]!;
+        const meta = fulfillment[(i + n) % fulfillment.length];
         const subtotal = lines.reduce(
           (sum, line) => sum + line.unitPrice * line.qty,
           0,
@@ -638,7 +637,9 @@ export class SeedService implements OnApplicationBootstrap {
               {
                 id: 'payment',
                 label:
-                  meta.paymentStatus === 'paid' ? 'Payment confirmed' : 'Awaiting payment',
+                  meta.paymentStatus === 'paid'
+                    ? 'Payment confirmed'
+                    : 'Awaiting payment',
                 at: new Date().toISOString(),
                 status: meta.paymentStatus === 'paid' ? 'done' : 'current',
               },
@@ -773,14 +774,14 @@ export class SeedService implements OnApplicationBootstrap {
 
     let created = 0;
     for (let i = 0; i < samples.length; i += 1) {
-      const sample = samples[i]!;
+      const sample = samples[i];
       const reference = `QTE-${year}-${1800 + i}`;
       const existing = await this.quotes.findOne({ where: { reference } });
       if (existing) continue;
 
       const buyer =
         buyers.find((user) => user.email === sample.email) ??
-        buyers[i % buyers.length]!;
+        buyers[i % buyers.length];
 
       await this.quotes.save(
         this.quotes.create({

@@ -1,5 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProperty,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Action, Resource, UserStatus } from '@app/shared';
 import { IsEnum } from 'class-validator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';

@@ -196,8 +196,7 @@ export class OrderService {
       qb.andWhere('o.status = :status', { status: query.status });
     }
 
-    const paginate =
-      query?.page !== undefined || query?.limit !== undefined;
+    const paginate = query?.page !== undefined || query?.limit !== undefined;
     if (!paginate) {
       const rows = await qb.getMany();
       return rows.map((row) => this.toDto(row));

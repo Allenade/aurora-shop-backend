@@ -85,8 +85,7 @@ export class ProcurementService {
     }
     const awaitingReview = await awaitingQb.getCount();
 
-    const paginate =
-      query?.page !== undefined || query?.limit !== undefined;
+    const paginate = query?.page !== undefined || query?.limit !== undefined;
     if (!paginate) {
       const rows = await qb.getMany();
       return rows.map((row) => this.toDto(row));
