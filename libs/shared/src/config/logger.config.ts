@@ -8,6 +8,7 @@ import type {
   SerializedResponse,
 } from 'pino';
 import type { Options as PinoHttpOptions } from 'pino-http';
+import pretty from 'pino-pretty';
 import type { EnvTypes } from './env.config';
 
 const REQUEST_ID_HEADER = 'x-request-id';
@@ -115,19 +116,19 @@ export const getPinoParams = (
   const logging = configService.get('logging', { infer: true });
   const nodeEnv = configService.get('nodeEnv', { infer: true });
 
-  const transport =
-    nodeEnv === 'development'
-      ? {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            translateTime: 'HH:MM:ss.l',
-            ignore: 'pid,hostname',
-          },
-        }
+  const isProduction =
+    nodeEnv === 'production' || process.env.NODE_ENV === 'production';
+
+  const prettyStream =
+    !isProduction && nodeEnv === 'development'
+      ? pretty({
+          colorize: true,
+          translateTime: 'HH:MM:ss.l',
+          ignore: 'pid,hostname',
+        })
       : undefined;
 
-  const pinoHttp: PinoHttpOptions = {
+  const pinoHttpOptions: PinoHttpOptions = {
     level: logging.level,
     redact: redactionOpts,
     customLogLevel: customHttpLogLevel,
@@ -143,10 +144,11 @@ export const getPinoParams = (
     quietReqLogger: true,
     customAttributeKeys: { reqId: 'requestId' },
     customProps: () => ({ context: 'RequestLogger', app: appName }),
-    ...(transport ? { transport } : {}),
   };
 
-  return { pinoHttp };
+  return {
+    pinoHttp: prettyStream ? [pinoHttpOptions, prettyStream] : pinoHttpOptions,
+  };
 };
 
 /** Nest LoggerModule.forRootAsync factory bound to app name. */
