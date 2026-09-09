@@ -9,6 +9,7 @@ import {
   ChangePasswordDto,
   RefreshTokenDto,
   RegisterDto,
+  ResendOtpDto,
   VerifyOtpDto,
 } from './dto/register.dto';
 import { TokenService } from './token/token.service';
@@ -60,6 +61,20 @@ export class AuthController {
   })
   verify(@Body() dto: VerifyOtpDto) {
     return this.auth.verifyOtp(dto.email, dto.code);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('otp/resend')
+  @ApiOperation({
+    operationId: 'resendSignupOtp',
+    summary: 'Resend OTP',
+    description:
+      'Resend a signup OTP for a pending registration. Subject to cooldown.',
+  })
+  resend(@Body() dto: ResendOtpDto) {
+    return this.auth.resendOtp(dto.email);
   }
 
   @Public()
