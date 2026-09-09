@@ -132,6 +132,28 @@ export class AuthService {
     };
   }
 
+  async resendOtp(email: string) {
+    const normalized = email.trim().toLowerCase();
+    const existing = await this.users.findByEmail(normalized);
+    if (existing?.emailVerified) {
+      throw new ConflictException('Email already in use');
+    }
+    const payload = await this.otp.getPayload(normalized);
+    if (!payload) {
+      throw new BadRequestException(
+        'No pending signup found. Please register again.',
+      );
+    }
+    const code = await this.otp.issue(normalized, payload);
+    this.audit.log({
+      type: AuditLogType.ACCESS,
+      action: AccessAuditAction.OTP_REQUEST,
+      resourceType: 'auth:otp',
+    });
+    this.emitOtp(normalized, code);
+    return { ok: true, email: normalized };
+  }
+
   async me(userId: string) {
     const user = await this.users.findByIdWithRoles(userId);
     if (!user) throw new UnauthorizedException('Authentication required.');

@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EnvTypes } from '@app/shared';
 import { createHash, randomInt } from 'crypto';
@@ -41,13 +47,22 @@ export class OtpStore implements OnModuleDestroy {
     return String(randomInt(100000, 999999));
   }
 
+  async getPayload(email: string) {
+    const record = await this.read(this.key(email));
+    if (!record || record.expiresAt < Date.now()) return null;
+    return record.payload ?? null;
+  }
+
   async issue(email: string, payload?: Record<string, unknown>) {
     const key = this.key(email);
     const existing = await this.read(key);
     const now = Date.now();
     if (existing && existing.cooldownUntil > now) {
       const wait = Math.ceil((existing.cooldownUntil - now) / 1000);
-      throw new Error(`Wait ${wait}s before requesting another code`);
+      throw new HttpException(
+        `Wait ${wait}s before requesting another code`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const code = this.generateCode();
@@ -60,7 +75,7 @@ export class OtpStore implements OnModuleDestroy {
       attempts: 0,
       expiresAt: now + expiryMinutes * 60_000,
       cooldownUntil: now + cooldown * 1000,
-      payload,
+      payload: payload ?? existing?.payload,
     };
     await this.write(key, record);
     return code;
