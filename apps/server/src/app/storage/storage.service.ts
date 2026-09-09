@@ -4,7 +4,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomBytes } from 'crypto';
 import type { EnvTypes } from '@app/shared';
@@ -63,10 +67,9 @@ export class StorageService {
     }
 
     const folder = (dto.folder || 'products').replace(/^\/+|\/+$/g, '');
-    const ext = this.extractExtension(dto.fileName);
     const sanitizedName = this.sanitizeFileName(dto.fileName);
     const uniqueId = randomBytes(6).toString('hex');
-    const key = `${folder}/${Date.now()}-${uniqueId}-${sanitizedName}${ext ? '' : ''}`;
+    const key = `${folder}/${Date.now()}-${uniqueId}-${sanitizedName}`;
 
     const command = new PutObjectCommand({
       Bucket: this.bucket,
@@ -116,15 +119,38 @@ export class StorageService {
     };
   }
 
+  /** Best-effort delete for objects hosted on our public R2 base URL. */
+  async deleteByPublicUrl(publicUrl?: string | null): Promise<void> {
+    if (!publicUrl || !this.s3Client) return;
+    const key = this.keyFromPublicUrl(publicUrl);
+    if (!key) return;
+    try {
+      await this.s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to delete storage object ${key}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  keyFromPublicUrl(publicUrl: string): string | null {
+    const base = `${this.publicBaseUrl}/`;
+    if (!publicUrl.startsWith(base)) return null;
+    const key = publicUrl.slice(base.length).replace(/^\/+/, '');
+    return key || null;
+  }
+
   private sanitizeFileName(fileName: string): string {
     return fileName
       .toLowerCase()
       .replace(/[^a-z0-9.-]/g, '-')
       .replace(/-+/g, '-');
-  }
-
-  private extractExtension(fileName: string): string {
-    const lastDot = fileName.lastIndexOf('.');
-    return lastDot !== -1 ? fileName.slice(lastDot) : '';
   }
 }

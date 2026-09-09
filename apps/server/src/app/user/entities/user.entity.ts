@@ -40,6 +40,9 @@ export class UserEntity extends DatabaseEntity {
   @Column({ nullable: true })
   state?: string;
 
+  @Column({ name: 'avatar_url', type: 'varchar', nullable: true })
+  avatarUrl?: string | null;
+
   @Column({ name: 'email_verified', default: false })
   emailVerified: boolean;
 

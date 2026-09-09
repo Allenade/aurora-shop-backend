@@ -43,6 +43,7 @@ export class AbilityFactoryService {
       firstName: user.firstName,
       lastName: user.lastName,
       type: user.type,
+      avatarUrl: user.avatarUrl ?? null,
       roles,
       permissions: deduped,
       rules,

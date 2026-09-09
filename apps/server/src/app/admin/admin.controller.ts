@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Action, Resource } from '@app/shared';
+import { Action, Resource, UserStatus } from '@app/shared';
 import { Repository } from 'typeorm';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import { ProductEntity } from '../catalog/entities/product.entity';
@@ -35,12 +35,14 @@ export class AdminController {
     description: 'Counts, recent orders, and stock alerts for the admin home.',
   })
   async overview() {
-    const [orderRows, userCount, productCount, quoteCount] = await Promise.all([
-      this.orders.find({ order: { createdAt: 'DESC' }, take: 200 }),
-      this.users.count(),
-      this.products.count(),
-      this.quotes.count(),
-    ]);
+    const [orderRows, userCount, activeUserCount, productCount, quoteCount] =
+      await Promise.all([
+        this.orders.find({ order: { createdAt: 'DESC' }, take: 200 }),
+        this.users.count(),
+        this.users.count({ where: { status: UserStatus.ACTIVE } }),
+        this.products.count(),
+        this.quotes.count(),
+      ]);
 
     const unpaid = orderRows.filter(
       (row) => row.paymentStatus === 'unpaid',
@@ -58,6 +60,7 @@ export class AdminController {
 
     const recentOrders = orderRows.slice(0, 8).map((row) => ({
       id: row.orderNumber,
+      internalId: row.id,
       customer: row.shippingName,
       amount: `₦${row.total.toLocaleString('en-NG')}`,
       status:
@@ -65,7 +68,9 @@ export class AdminController {
           ? 'In Transit'
           : row.status === 'delivered'
             ? 'Delivered'
-            : 'Pending',
+            : row.status === 'cancelled'
+              ? 'Cancelled'
+              : 'Pending',
       date: row.createdAt.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -136,6 +141,7 @@ export class AdminController {
     return {
       orderCount: orderRows.length,
       userCount,
+      activeUserCount,
       productCount,
       quoteCount,
       unpaid,
@@ -151,21 +157,21 @@ export class AdminController {
           id: 'revenue',
           label: 'Paid Revenue',
           value: `₦${paidTotal.toLocaleString('en-NG')}`,
-          hint: 'Confirmed ledger only',
+          hint: 'Confirmed payments',
           icon: 'revenue',
         },
         {
           id: 'active',
-          label: 'Catalog SKUs',
-          value: String(productCount),
-          hint: `${alerts.length} stock alerts`,
+          label: 'Active Users',
+          value: String(activeUserCount),
+          hint: `${userCount} total users`,
           icon: 'active',
         },
         {
           id: 'inactive',
-          label: 'Open Quotes',
-          value: String(quoteCount),
-          hint: 'Procurement queue',
+          label: 'Catalog SKUs',
+          value: String(productCount),
+          hint: `${alerts.length} stock alerts`,
           icon: 'inactive',
         },
       ],

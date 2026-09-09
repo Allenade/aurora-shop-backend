@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -28,10 +28,21 @@ export class InventoryController {
   @ApiOperation({
     operationId: 'listInventory',
     summary: 'List Inventory',
-    description: 'Stock levels for admin.',
+    description:
+      'Stock levels for admin. Pass page/limit for a paginated `{ items, total, page, limit, pageCount }` response; omit them to receive a plain array.',
   })
-  list() {
-    return this.inventory.list();
+  list(
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.inventory.list({
+      q,
+      status,
+      page: page !== undefined ? Number(page) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+    });
   }
 
   @Post(':productId/restock')
