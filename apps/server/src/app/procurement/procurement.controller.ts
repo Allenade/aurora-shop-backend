@@ -35,6 +35,22 @@ export class ProcurementController {
     return this.procurement.create(userId, body);
   }
 
+  @Patch('quotes/:id')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.QUOTE })
+  @ApiOperation({
+    operationId: 'updateQuote',
+    summary: 'Update Quote',
+    description:
+      'Edit a draft or pending quote. Pass submit:true to submit a draft, submit:false to save as draft.',
+  })
+  update(
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.procurement.update(userId, id, body);
+  }
+
   @Get('quotes')
   @RequirePermissions({ action: Action.LIST, resource: Resource.PROCUREMENT })
   @ApiOperation({

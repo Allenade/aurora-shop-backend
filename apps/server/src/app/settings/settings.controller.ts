@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Action, Resource } from '@app/shared';
+import { Action, Resource, UserType } from '@app/shared';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import { AuthService } from '../auth/auth.service';
@@ -8,7 +8,8 @@ import { ChangePasswordDto } from '../auth/dto/register.dto';
 import { UserRepository } from '../user/repositories/user.repository';
 import { OrderService } from '../order/order.service';
 import type { JwtPayload } from '../auth/dto/auth.types';
-import { UserType } from '@app/shared';
+import { StorageService } from '../storage/storage.service';
+import { CreateUploadUrlDto } from '../storage/dto/upload.dto';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -18,6 +19,7 @@ export class SettingsController {
     private readonly users: UserRepository,
     private readonly auth: AuthService,
     private readonly orders: OrderService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get('profile')
@@ -39,6 +41,7 @@ export class SettingsController {
       companyName: user?.companyName ?? '',
       address: user?.state ?? '',
       initials: initials || 'AU',
+      avatarUrl: user?.avatarUrl ?? null,
     };
   }
 
@@ -71,6 +74,65 @@ export class SettingsController {
     if (body.address !== undefined) user.state = body.address;
     await this.users.save(user);
     return { ok: true };
+  }
+
+  @Post('profile/avatar/upload-url')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.SETTINGS })
+  @ApiOperation({
+    operationId: 'getProfileAvatarUploadUrl',
+    summary: 'Get Profile Avatar Upload URL',
+    description: 'Presigned R2 upload URL for profile photos (avatars folder).',
+  })
+  getAvatarUploadUrl(@Body() dto: CreateUploadUrlDto) {
+    return this.storage.getPresignedUploadUrl({
+      ...dto,
+      folder: 'avatars',
+    });
+  }
+
+  @Patch('profile/avatar')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.SETTINGS })
+  @ApiOperation({
+    operationId: 'updateProfileAvatar',
+    summary: 'Update Profile Avatar',
+    description:
+      'Set avatar URL after upload. Deletes the previous R2 object when replacing.',
+  })
+  async updateAvatar(
+    @CurrentUser('sub') userId: string,
+    @Body() body: { avatarUrl: string },
+  ) {
+    const user = await this.users.findById(userId);
+    if (!user) return { ok: false, avatarUrl: null };
+    const nextUrl = body.avatarUrl?.trim();
+    if (!nextUrl) return { ok: false, avatarUrl: user.avatarUrl ?? null };
+
+    const previous = user.avatarUrl;
+    if (previous && previous !== nextUrl) {
+      await this.storage.deleteByPublicUrl(previous);
+    }
+    user.avatarUrl = nextUrl;
+    await this.users.save(user);
+    return { ok: true, avatarUrl: user.avatarUrl };
+  }
+
+  @Delete('profile/avatar')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.SETTINGS })
+  @ApiOperation({
+    operationId: 'deleteProfileAvatar',
+    summary: 'Delete Profile Avatar',
+    description:
+      'Remove avatar image from storage and clear the profile photo.',
+  })
+  async deleteAvatar(@CurrentUser('sub') userId: string) {
+    const user = await this.users.findById(userId);
+    if (!user) return { ok: false };
+    if (user.avatarUrl) {
+      await this.storage.deleteByPublicUrl(user.avatarUrl);
+      user.avatarUrl = null;
+      await this.users.save(user);
+    }
+    return { ok: true, avatarUrl: null };
   }
 
   @Patch('password')

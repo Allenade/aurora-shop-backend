@@ -7,6 +7,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AdminModule } from './app/admin/admin.module';
 import { AuditLogModule } from './app/audit-log/audit-log.module';
 import { AuthModule } from './app/auth/auth.module';
+import { CartModule } from './app/cart/cart.module';
 import { CatalogModule } from './app/catalog/catalog.module';
 import { HealthModule } from './app/health/health.module';
 import { InventoryModule } from './app/inventory/inventory.module';
@@ -39,6 +40,7 @@ import { UserModule } from './app/user/user.module';
     UserModule,
     HealthModule,
     CatalogModule,
+    CartModule,
     InventoryModule,
     PaymentGatewayModule,
     TransactionModule,

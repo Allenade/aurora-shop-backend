@@ -26,6 +26,21 @@ import { RoleEntity } from '../role/entities/role.entity';
 import { UserRoleEntity } from '../role/entities/user-role.entity';
 import { UserEntity } from '../user/entities/user.entity';
 
+const PRODUCT_IMAGE_POOL = [
+  '/images/auth-panel.png',
+  '/images/auth-signin-panel.png',
+  '/images/auth-panel.png',
+  '/images/auth-signin-panel.png',
+  '/images/auth-panel.png',
+] as const;
+
+/** Up to 5 gallery images, rotated from the pool so each product has a full set. */
+function productGallery(offset = 0): string[] {
+  return Array.from({ length: 5 }, (_, i) => {
+    return PRODUCT_IMAGE_POOL[(offset + i) % PRODUCT_IMAGE_POOL.length];
+  });
+}
+
 const CATALOG: Array<
   Partial<ProductEntity> & { quantity: number; minStock: number }
 > = [
@@ -40,8 +55,8 @@ const CATALOG: Array<
     sku: 'ARD-UNO-R3',
     quantity: 48,
     minStock: 8,
-    image: '/images/auth-panel.png',
-    images: ['/images/auth-panel.png', '/images/auth-signin-panel.png'],
+    image: productGallery(0)[0],
+    images: productGallery(0),
     specs: [
       { label: 'Microcontroller', value: 'ATmega328P' },
       { label: 'Operating Voltage', value: '5V' },
@@ -59,8 +74,8 @@ const CATALOG: Array<
     isNew: true,
     quantity: 23,
     minStock: 5,
-    image: '/images/auth-signin-panel.png',
-    images: ['/images/auth-signin-panel.png'],
+    image: productGallery(1)[0],
+    images: productGallery(1),
     specs: [{ label: 'RAM', value: '8GB LPDDR4-3200 SDRAM' }],
   },
   {
@@ -74,8 +89,8 @@ const CATALOG: Array<
     sku: 'PSU-12V-5A',
     quantity: 120,
     minStock: 20,
-    image: '/images/auth-panel.png',
-    images: ['/images/auth-panel.png'],
+    image: productGallery(2)[0],
+    images: productGallery(2),
     specs: [{ label: 'Output', value: '12V DC 5A' }],
   },
   {
@@ -89,8 +104,8 @@ const CATALOG: Array<
     sku: 'SEN-DHT22',
     quantity: 4,
     minStock: 10,
-    image: '/images/auth-signin-panel.png',
-    images: ['/images/auth-signin-panel.png'],
+    image: productGallery(3)[0],
+    images: productGallery(3),
     specs: [{ label: 'Interface', value: 'Single-wire digital' }],
   },
   {
@@ -104,8 +119,8 @@ const CATALOG: Array<
     sku: 'DSP-OLED-096',
     quantity: 67,
     minStock: 10,
-    image: '/images/auth-panel.png',
-    images: ['/images/auth-panel.png'],
+    image: productGallery(4)[0],
+    images: productGallery(4),
     specs: [{ label: 'Resolution', value: '128 × 64' }],
   },
   {
@@ -120,8 +135,8 @@ const CATALOG: Array<
     isNew: true,
     quantity: 35,
     minStock: 8,
-    image: '/images/auth-signin-panel.png',
-    images: ['/images/auth-signin-panel.png'],
+    image: productGallery(0)[0],
+    images: productGallery(0),
     specs: [{ label: 'Microcontroller', value: 'ATmega328' }],
   },
   {
@@ -136,8 +151,8 @@ const CATALOG: Array<
     isNew: true,
     quantity: 62,
     minStock: 12,
-    image: '/images/auth-panel.png',
-    images: ['/images/auth-panel.png'],
+    image: productGallery(1)[0],
+    images: productGallery(1),
     specs: [
       { label: 'Connectivity', value: 'Wi-Fi 802.11 b/g/n + Bluetooth' },
       { label: 'Cores', value: 'Dual-core LX6' },
@@ -154,8 +169,8 @@ const CATALOG: Array<
     sku: 'MTR-NEMA17',
     quantity: 28,
     minStock: 8,
-    image: '/images/auth-signin-panel.png',
-    images: ['/images/auth-signin-panel.png'],
+    image: productGallery(2)[0],
+    images: productGallery(2),
     specs: [
       { label: 'Step Angle', value: '1.8°' },
       { label: 'Rated Current', value: '1.5A' },
@@ -172,8 +187,8 @@ const CATALOG: Array<
     sku: 'SEN-HCSR04',
     quantity: 2,
     minStock: 15,
-    image: '/images/auth-panel.png',
-    images: ['/images/auth-panel.png'],
+    image: productGallery(3)[0],
+    images: productGallery(3),
     specs: [{ label: 'Range', value: '2cm – 400cm' }],
   },
   {
@@ -187,8 +202,8 @@ const CATALOG: Array<
     sku: 'BRD-830',
     quantity: 95,
     minStock: 20,
-    image: '/images/auth-signin-panel.png',
-    images: ['/images/auth-signin-panel.png'],
+    image: productGallery(4)[0],
+    images: productGallery(4),
     specs: [{ label: 'Tie Points', value: '830' }],
   },
 ];
@@ -317,12 +332,28 @@ export class SeedService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
+    await this.ensureAvatarColumn();
     if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
     await this.seedRoles();
     await this.seedUsers();
     await this.seedCatalog();
     await this.seedOrders();
     await this.seedQuotes();
+  }
+
+  /** Safe for prod: add avatar_url if missing (synchronize is off in production). */
+  private async ensureAvatarColumn() {
+    try {
+      await this.users.query(
+        `ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "avatar_url" character varying`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Could not ensure avatar_url column: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async seedRoles() {
@@ -345,10 +376,17 @@ export class SeedService implements OnApplicationBootstrap {
     let role = await this.roles.findOne({ where: { slug } });
     if (!role) role = await this.roles.save(this.roles.create({ slug, name }));
     const existing = await this.grants.find({ where: { roleId: role.id } });
-    if (existing.length > 0) return role;
-    await this.grants.save(
-      grants.map((grant) => this.grants.create({ roleId: role.id, ...grant })),
-    );
+    const key = (g: { action: Action; resource: Resource }) =>
+      `${g.action}:${g.resource}`;
+    const have = new Set(existing.map((g) => key(g)));
+    const missing = grants.filter((g) => !have.has(key(g)));
+    if (missing.length > 0) {
+      await this.grants.save(
+        missing.map((grant) =>
+          this.grants.create({ roleId: role.id, ...grant }),
+        ),
+      );
+    }
     return role;
   }
 
@@ -445,11 +483,32 @@ export class SeedService implements OnApplicationBootstrap {
     for (const item of CATALOG) {
       const exists = await this.products.findOne({
         where: { slug: item.slug },
+        relations: { inventory: true },
       });
-      if (exists) continue;
+      if (exists) {
+        const current = Array.isArray(exists.images)
+          ? exists.images.filter((url) => typeof url === 'string' && url.trim())
+          : [];
+        if (current.length >= 5) continue;
+
+        const seedImages = (item.images ?? []).slice(0, 5);
+        const merged = [...current];
+        for (const url of seedImages) {
+          if (merged.length >= 5) break;
+          merged.push(url);
+        }
+        if (merged.length > current.length) {
+          exists.images = merged.slice(0, 5);
+          exists.image = exists.image || merged[0];
+          await this.products.save(exists);
+        }
+        continue;
+      }
       await this.products.save(
         this.products.create({
           ...item,
+          image: item.image ?? item.images?.[0],
+          images: (item.images ?? []).slice(0, 5),
           highlights: [
             { label: 'Verified Inventory', icon: 'verified' },
             { label: 'Technical Support available', icon: 'support' },

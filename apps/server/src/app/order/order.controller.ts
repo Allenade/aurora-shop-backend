@@ -36,13 +36,25 @@ export class OrderController {
     return this.orders.checkout({ ...body, userId: user.sub });
   }
 
+  @Get('dashboard')
+  @RequirePermissions({ action: Action.READ, resource: Resource.DASHBOARD })
+  @ApiOperation({
+    operationId: 'getBuyerDashboard',
+    summary: 'Buyer Dashboard',
+    description:
+      'Buyer home stats (purchases, pending, spend) and recent orders from the last 60 days.',
+  })
+  dashboard(@CurrentUser('sub') userId: string) {
+    return this.orders.dashboardForUser(userId);
+  }
+
   @Get('orders')
   @RequirePermissions({ action: Action.LIST, resource: Resource.ORDER })
   @ApiOperation({
     operationId: 'listOrders',
     summary: 'List Orders',
     description:
-      'Orders for the current user, or all orders for admins. Pass page/limit for a paginated `{ items, total, page, limit, pageCount }` response; omit them to receive a plain array.',
+      'Orders for the current user, or all orders for admins. Pass page/limit for a paginated `{ items, total, page, limit, pageCount }` response; omit them to receive a plain array. `status` accepts a single value or CSV (`pending,in_transit`).',
   })
   list(
     @CurrentUser() user: JwtPayload,
@@ -57,6 +69,18 @@ export class OrderController {
       page: page !== undefined ? Number(page) : undefined,
       limit: limit !== undefined ? Number(limit) : undefined,
     });
+  }
+
+  @Get('orders/counts')
+  @RequirePermissions({ action: Action.LIST, resource: Resource.ORDER })
+  @ApiOperation({
+    operationId: 'getOrderCounts',
+    summary: 'Order Counts',
+    description:
+      'Tab counts for the current user: all, completed (delivered), pending (pending+in_transit), cancelled.',
+  })
+  counts(@CurrentUser() user: JwtPayload) {
+    return this.orders.countsForUser(user.sub, user.type === UserType.ADMIN);
   }
 
   @Get('orders/:id')

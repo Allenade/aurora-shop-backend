@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomInt } from 'crypto';
@@ -20,6 +24,21 @@ const STATUS_VALUES: QuoteStatus[] = [
   'rejected',
 ];
 
+const EDITABLE: QuoteStatus[] = ['draft', 'pending'];
+
+type QuoteWriteInput = {
+  submit?: boolean;
+  companyName?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  components?: string;
+  quantity?: string;
+  budget?: string;
+  deliveryDate?: string;
+  specs?: string;
+};
+
 @Injectable()
 export class ProcurementService {
   constructor(
@@ -27,11 +46,8 @@ export class ProcurementService {
     private readonly quotes: Repository<QuoteEntity>,
   ) {}
 
-  async create(
-    userId: string,
-    input: Partial<QuoteEntity> & { submit?: boolean },
-  ) {
-    const { submit, ...fields } = input;
+  async create(userId: string, input: QuoteWriteInput) {
+    const fields = this.pickFields(input);
     const year = new Date().getFullYear();
     const saved = await this.quotes.save(
       this.quotes.create({
@@ -39,10 +55,33 @@ export class ProcurementService {
         userId,
         reference: `QTE-${year}-${randomInt(1000, 9999)}`,
         title: fields.components || fields.companyName || 'Quote',
-        status: submit ? 'pending' : 'draft',
+        status: input.submit ? 'pending' : 'draft',
       }),
     );
     return this.toDto(saved);
+  }
+
+  async update(userId: string, id: string, input: QuoteWriteInput) {
+    const row = await this.quotes.findOne({ where: { id, userId } });
+    if (!row) throw new NotFoundException('Quote not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new BadRequestException(
+        'Only draft or pending quotes can be edited',
+      );
+    }
+
+    const fields = this.pickFields(input);
+    Object.assign(row, fields);
+    row.title = row.components || row.companyName || 'Quote';
+
+    if (input.submit === true) {
+      row.status = 'pending';
+    } else if (input.submit === false) {
+      row.status = 'draft';
+    }
+
+    await this.quotes.save(row);
+    return this.toDto(row);
   }
 
   async list(
@@ -114,6 +153,20 @@ export class ProcurementService {
     row.status = status;
     await this.quotes.save(row);
     return this.toDto(row);
+  }
+
+  private pickFields(input: QuoteWriteInput) {
+    return {
+      companyName: String(input.companyName ?? ''),
+      contactPerson: String(input.contactPerson ?? ''),
+      email: String(input.email ?? ''),
+      phone: String(input.phone ?? ''),
+      components: String(input.components ?? ''),
+      quantity: String(input.quantity ?? ''),
+      budget: String(input.budget ?? ''),
+      deliveryDate: String(input.deliveryDate ?? ''),
+      specs: String(input.specs ?? ''),
+    };
   }
 
   private normalizeStatus(value?: string): QuoteStatus | undefined {
