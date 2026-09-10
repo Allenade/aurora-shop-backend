@@ -24,14 +24,35 @@ export class CatalogController {
   @ApiOperation({
     operationId: 'listProducts',
     summary: 'List Products',
-    description: 'Shop catalog with optional filters.',
+    description:
+      'Shop catalog with optional filters. Pass page/limit or offset/limit for a paginated `{ items, total, page, limit, offset, pageCount, catalogMaxPrice, categories, brands }` response; omit them to receive a plain array. Use sort=random&seed=… for a stable shuffled order across pages.',
   })
   list(
     @Query('category') category?: string,
     @Query('brand') brand?: string,
     @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('maxPrice') maxPrice?: string,
+    @Query('minPrice') minPrice?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('sort') sort?: string,
+    @Query('seed') seed?: string,
   ) {
-    return this.catalog.list({ category, brand, q });
+    return this.catalog.list({
+      category,
+      brand,
+      q,
+      status,
+      maxPrice: maxPrice !== undefined ? Number(maxPrice) : undefined,
+      minPrice: minPrice !== undefined ? Number(minPrice) : undefined,
+      page: page !== undefined ? Number(page) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+      offset: offset !== undefined ? Number(offset) : undefined,
+      sort,
+      seed,
+    });
   }
 
   @Get('products/:slug')

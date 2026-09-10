@@ -68,6 +68,7 @@ export const PROCUREMENT_GRANTS: Array<{ action: Action; resource: Resource }> =
     { action: Action.READ, resource: Resource.PROCUREMENT },
     { action: Action.LIST, resource: Resource.PROCUREMENT },
     { action: Action.CREATE, resource: Resource.QUOTE },
+    { action: Action.UPDATE, resource: Resource.QUOTE },
     { action: Action.READ, resource: Resource.SETTINGS },
     { action: Action.UPDATE, resource: Resource.SETTINGS },
   ];

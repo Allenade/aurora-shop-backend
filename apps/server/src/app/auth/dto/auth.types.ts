@@ -23,6 +23,7 @@ export type SessionUser = {
   firstName: string;
   lastName: string;
   type: UserType;
+  avatarUrl?: string | null;
   roles: SessionRole[];
   permissions: SessionPermission[];
   rules: SessionRule[];

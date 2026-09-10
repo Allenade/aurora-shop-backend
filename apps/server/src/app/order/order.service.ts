@@ -16,6 +16,7 @@ import {
   TransactionStatus,
 } from '../payment-gateway/_contract/payment.types';
 import { TransactionService } from '../transaction/transaction.service';
+import { UserRepository } from '../user/repositories/user.repository';
 import {
   OrderEntity,
   type OrderStatus,
@@ -46,6 +47,7 @@ export class OrderService {
     private readonly products: Repository<ProductEntity>,
     private readonly transactions: TransactionService,
     private readonly inventory: InventoryService,
+    private readonly users: UserRepository,
     private readonly config: ConfigService<EnvTypes, true>,
   ) {}
 
@@ -149,6 +151,7 @@ export class OrderService {
     });
     order.transactionReference = tx.reference;
     await this.orders.save(order);
+    await this.saveDefaultShippingFromCheckout(input);
 
     return {
       ...this.toDto(order),
@@ -162,18 +165,195 @@ export class OrderService {
     };
   }
 
-  async listForUser(userId: string, isAdmin: boolean) {
-    const rows = await this.orders.find({
-      where: isAdmin ? {} : { userId },
-      order: { createdAt: 'DESC' },
+  async listForUser(
+    userId: string,
+    isAdmin: boolean,
+    query?: {
+      q?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const qb = this.orders
+      .createQueryBuilder('o')
+      .orderBy('o.createdAt', 'DESC');
+
+    if (!isAdmin) {
+      qb.andWhere('o.userId = :userId', { userId });
+    }
+
+    if (query?.q) {
+      qb.andWhere(
+        `(o.orderNumber ILIKE :q OR o.trackingNumber ILIKE :q OR o.shippingName ILIKE :q OR o.shippingEmail ILIKE :q OR COALESCE(o.transactionReference, '') ILIKE :q)`,
+        { q: `%${query.q}%` },
+      );
+    }
+
+    if (query?.status?.trim()) {
+      const allowed = new Set([
+        'pending',
+        'in_transit',
+        'delivered',
+        'cancelled',
+      ]);
+      const statuses = query.status
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => allowed.has(part));
+      if (statuses.length === 1) {
+        qb.andWhere('o.status = :status', { status: statuses[0] });
+      } else if (statuses.length > 1) {
+        qb.andWhere('o.status IN (:...statuses)', { statuses });
+      }
+    }
+
+    const paginate = query?.page !== undefined || query?.limit !== undefined;
+    if (!paginate) {
+      const rows = await qb.getMany();
+      return rows.map((row) => this.toDto(row));
+    }
+
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(query?.limit) || 10));
+    const total = await qb.clone().getCount();
+    const rows = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+    return {
+      items: rows.map((row) => this.toDto(row)),
+      total,
+      page,
+      limit,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
+  async countsForUser(userId: string, isAdmin: boolean) {
+    const qb = this.orders
+      .createQueryBuilder('o')
+      .select('o.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('o.status');
+
+    if (!isAdmin) {
+      qb.where('o.userId = :userId', { userId });
+    }
+
+    const rows = await qb.getRawMany<{ status: string; count: string }>();
+    const byStatus: Record<string, number> = {};
+    for (const row of rows) {
+      byStatus[row.status] = Number(row.count) || 0;
+    }
+
+    const pending = (byStatus.pending ?? 0) + (byStatus.in_transit ?? 0);
+    const completed = byStatus.delivered ?? 0;
+    const cancelled = byStatus.cancelled ?? 0;
+
+    return {
+      all: pending + completed + cancelled,
+      completed,
+      pending,
+      cancelled,
+    };
+  }
+
+  async dashboardForUser(userId: string) {
+    const counts = await this.countsForUser(userId, false);
+
+    const spentRow = await this.orders
+      .createQueryBuilder('o')
+      .select('COALESCE(SUM(o.total), 0)', 'spent')
+      .where('o.userId = :userId', { userId })
+      .andWhere("o.status <> 'cancelled'")
+      .getRawOne<{ spent: string }>();
+    const spent = Number(spentRow?.spent) || 0;
+
+    const now = new Date();
+    const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [thisMonth, lastMonth] = await Promise.all([
+      this.orders
+        .createQueryBuilder('o')
+        .where('o.userId = :userId', { userId })
+        .andWhere('o.createdAt >= :start', { start: startThisMonth })
+        .getCount(),
+      this.orders
+        .createQueryBuilder('o')
+        .where('o.userId = :userId', { userId })
+        .andWhere('o.createdAt >= :start', { start: startLastMonth })
+        .andWhere('o.createdAt < :end', { end: startThisMonth })
+        .getCount(),
+    ]);
+
+    let trend: string | undefined;
+    if (thisMonth > 0 || lastMonth > 0) {
+      if (lastMonth === 0) {
+        trend = '+100% from last month';
+      } else {
+        const pct = Math.round(((thisMonth - lastMonth) / lastMonth) * 100);
+        trend = `${pct >= 0 ? '+' : ''}${pct}% from last month`;
+      }
+    }
+
+    const since = new Date();
+    since.setDate(since.getDate() - 60);
+    const recentRows = await this.orders
+      .createQueryBuilder('o')
+      .where('o.userId = :userId', { userId })
+      .andWhere('o.createdAt >= :since', { since })
+      .orderBy('o.createdAt', 'DESC')
+      .take(5)
+      .getMany();
+    const recentOrders = recentRows.map((row) => {
+      const dto = this.toDto(row);
+      return {
+        id: dto.id,
+        date: dto.date,
+        items: dto.itemCount,
+        total: dto.total,
+        status: dto.status as
+          'In Transit' | 'Delivered' | 'Pending' | 'Cancelled',
+      };
     });
-    return rows.map((row) => this.toDto(row));
+
+    return {
+      stats: [
+        {
+          id: 'total',
+          label: 'Total Purchases',
+          value: String(counts.all),
+          ...(trend ? { trend } : {}),
+          icon: 'bag' as const,
+        },
+        {
+          id: 'pending',
+          label: 'Pending Purchases',
+          value: String(counts.pending),
+          icon: 'clock' as const,
+        },
+        {
+          id: 'spent',
+          label: 'Total Spent',
+          value: `₦${spent.toLocaleString('en-NG')}`,
+          icon: 'spend' as const,
+        },
+      ],
+      recentOrders,
+    };
   }
 
   async getById(id: string, userId: string, isAdmin: boolean) {
-    const row = await this.orders.findOne({
-      where: id.startsWith('ORD-') ? { orderNumber: id } : { id },
-    });
+    const key = id.trim();
+    const row = await this.orders
+      .createQueryBuilder('o')
+      .where(
+        'o.id::text = :key OR LOWER(o.orderNumber) = LOWER(:key) OR LOWER(o.trackingNumber) = LOWER(:key)',
+        { key },
+      )
+      .getOne();
     if (!row || (!isAdmin && row.userId !== userId)) {
       throw new NotFoundException('Order not found');
     }
@@ -181,12 +361,28 @@ export class OrderService {
   }
 
   async track(query: string) {
-    const row = await this.orders.findOne({
-      where: [{ trackingNumber: query }, { orderNumber: query }],
-    });
+    const key = query.trim();
+    if (!key) throw new NotFoundException('Shipment not found');
+
+    const row = await this.orders
+      .createQueryBuilder('o')
+      .where(
+        'LOWER(o.trackingNumber) = LOWER(:key) OR LOWER(o.orderNumber) = LOWER(:key)',
+        { key },
+      )
+      .getOne();
     if (!row) throw new NotFoundException('Shipment not found');
+
     const eta = new Date(row.createdAt);
     eta.setDate(eta.getDate() + (row.deliveryMethod === 'express' ? 2 : 5));
+
+    const descriptions: Record<string, string> = {
+      placed: 'Your order has been received and confirmed',
+      payment: 'Waiting for payment confirmation',
+      ship: 'Package handed over to courier',
+      deliver: 'Package delivered to recipient',
+    };
+
     return {
       orderId: row.orderNumber,
       trackingNumber: row.trackingNumber,
@@ -204,9 +400,26 @@ export class OrderService {
       timeline: (row.timeline ?? []).map((step) => ({
         id: step.id,
         label: step.label,
-        description: step.label,
-        at: step.at,
-        status: step.status === 'done' ? 'done' : 'upcoming',
+        description: descriptions[step.id] ?? step.label,
+        at: step.at
+          ? (() => {
+              const parsed = new Date(step.at);
+              if (Number.isNaN(parsed.getTime())) return step.at;
+              return parsed.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              });
+            })()
+          : '',
+        status:
+          step.status === 'done'
+            ? 'done'
+            : step.status === 'current'
+              ? 'current'
+              : 'upcoming',
       })),
       items: (row.items ?? []).map((item, index) => ({
         id: item.productId || `item-${index}`,
@@ -275,6 +488,22 @@ export class OrderService {
     return 'Processing';
   }
 
+  /** Persist checkout delivery fields as the buyer's next-form defaults. */
+  private async saveDefaultShippingFromCheckout(input: CheckoutInput) {
+    const user = await this.users.findById(input.userId);
+    if (!user) return;
+    user.defaultShipping = {
+      fullName: input.fullName.trim(),
+      email: input.email.trim().toLowerCase(),
+      phone: input.phone.trim(),
+      streetAddress: input.streetAddress.trim(),
+      city: input.city.trim(),
+      state: input.state.trim(),
+      note: input.note?.trim() || undefined,
+    };
+    await this.users.save(user);
+  }
+
   toDto(order: OrderEntity) {
     const paymentLabel =
       order.paymentStatus === 'paid'
@@ -321,6 +550,7 @@ export class OrderService {
       timeline: order.timeline,
       items: order.items.map((item) => ({
         id: item.productId,
+        slug: item.slug,
         name: item.name,
         sku: item.sku,
         qty: item.qty,
