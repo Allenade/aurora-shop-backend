@@ -10,6 +10,7 @@ import { OrderService } from '../order/order.service';
 import type { JwtPayload } from '../auth/dto/auth.types';
 import { StorageService } from '../storage/storage.service';
 import { CreateUploadUrlDto } from '../storage/dto/upload.dto';
+import { ShippingAddressDto } from './dto/shipping.dto';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -185,6 +186,57 @@ export class SettingsController {
     user.notifications = body;
     await this.users.save(user);
     return { ok: true };
+  }
+
+  @Get('shipping')
+  @RequirePermissions({ action: Action.READ, resource: Resource.SETTINGS })
+  @ApiOperation({
+    operationId: 'getShippingSettings',
+    summary: 'Get Shipping Defaults',
+    description:
+      'Saved delivery address for checkout prefill. Falls back to profile name/email/phone when empty.',
+  })
+  async shipping(@CurrentUser('sub') userId: string) {
+    const user = await this.users.findById(userId);
+    const saved = user?.defaultShipping;
+    const fullName =
+      saved?.fullName?.trim() ||
+      `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim();
+    return {
+      fullName,
+      email: saved?.email?.trim() || user?.email || '',
+      phone: saved?.phone?.trim() || user?.phone || '',
+      streetAddress: saved?.streetAddress ?? '',
+      city: saved?.city ?? '',
+      state: saved?.state?.trim() || user?.state || '',
+      note: saved?.note ?? '',
+    };
+  }
+
+  @Patch('shipping')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.SETTINGS })
+  @ApiOperation({
+    operationId: 'updateShippingSettings',
+    summary: 'Update Shipping Defaults',
+    description: 'Save default delivery fields used to prefill checkout.',
+  })
+  async updateShipping(
+    @CurrentUser('sub') userId: string,
+    @Body() body: ShippingAddressDto,
+  ) {
+    const user = await this.users.findById(userId);
+    if (!user) return { ok: false };
+    user.defaultShipping = {
+      fullName: body.fullName.trim(),
+      email: body.email.trim().toLowerCase(),
+      phone: body.phone.trim(),
+      streetAddress: body.streetAddress.trim(),
+      city: body.city.trim(),
+      state: body.state.trim(),
+      note: body.note?.trim() || undefined,
+    };
+    await this.users.save(user);
+    return { ok: true, shipping: user.defaultShipping };
   }
 
   @Get('billing')

@@ -333,12 +333,21 @@ export class SeedService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap() {
     await this.ensureAvatarColumn();
+    await this.ensureDefaultShippingColumn();
     if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
-    await this.seedRoles();
-    await this.seedUsers();
-    await this.seedCatalog();
-    await this.seedOrders();
-    await this.seedQuotes();
+    try {
+      await this.seedRoles();
+      await this.seedUsers();
+      await this.seedCatalog();
+      await this.seedOrders();
+      await this.seedQuotes();
+    } catch (err) {
+      this.logger.warn(
+        `Dev seed skipped after error (server still starts): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /** Safe for prod: add avatar_url if missing (synchronize is off in production). */
@@ -350,6 +359,21 @@ export class SeedService implements OnApplicationBootstrap {
     } catch (err) {
       this.logger.warn(
         `Could not ensure avatar_url column: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /** Safe for prod: add default_shipping jsonb if missing. */
+  private async ensureDefaultShippingColumn() {
+    try {
+      await this.users.query(
+        `ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "default_shipping" jsonb`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Could not ensure default_shipping column: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -481,46 +505,68 @@ export class SeedService implements OnApplicationBootstrap {
 
   private async seedCatalog() {
     for (const item of CATALOG) {
+      // Include soft-deleted rows — unique(slug) still applies to them.
       const exists = await this.products.findOne({
         where: { slug: item.slug },
         relations: { inventory: true },
+        withDeleted: true,
       });
       if (exists) {
+        let dirty = false;
+        if (exists.deletedAt) {
+          exists.deletedAt = null as unknown as undefined;
+          dirty = true;
+        }
+
         const current = Array.isArray(exists.images)
           ? exists.images.filter((url) => typeof url === 'string' && url.trim())
           : [];
-        if (current.length >= 5) continue;
-
-        const seedImages = (item.images ?? []).slice(0, 5);
-        const merged = [...current];
-        for (const url of seedImages) {
-          if (merged.length >= 5) break;
-          merged.push(url);
+        if (current.length < 5) {
+          const seedImages = (item.images ?? []).slice(0, 5);
+          const merged = [...current];
+          for (const url of seedImages) {
+            if (merged.length >= 5) break;
+            merged.push(url);
+          }
+          if (merged.length > current.length) {
+            exists.images = merged.slice(0, 5);
+            exists.image = exists.image || merged[0];
+            dirty = true;
+          }
         }
-        if (merged.length > current.length) {
-          exists.images = merged.slice(0, 5);
-          exists.image = exists.image || merged[0];
+
+        if (dirty) {
           await this.products.save(exists);
         }
         continue;
       }
-      await this.products.save(
-        this.products.create({
-          ...item,
-          image: item.image ?? item.images?.[0],
-          images: (item.images ?? []).slice(0, 5),
-          highlights: [
-            { label: 'Verified Inventory', icon: 'verified' },
-            { label: 'Technical Support available', icon: 'support' },
-          ],
-          datasheetNote: 'Datasheet available on request.',
-          reviewsNote: 'Reviews will appear after verified purchases.',
-          inventory: {
-            quantity: item.quantity,
-            minStock: item.minStock,
-          },
-        }),
-      );
+
+      try {
+        await this.products.save(
+          this.products.create({
+            ...item,
+            image: item.image ?? item.images?.[0],
+            images: (item.images ?? []).slice(0, 5),
+            highlights: [
+              { label: 'Verified Inventory', icon: 'verified' },
+              { label: 'Technical Support available', icon: 'support' },
+            ],
+            datasheetNote: 'Datasheet available on request.',
+            reviewsNote: 'Reviews will appear after verified purchases.',
+            inventory: {
+              quantity: item.quantity,
+              minStock: item.minStock,
+            },
+          }),
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('duplicate key') || message.includes('UQ_')) {
+          this.logger.warn(`Catalog seed skipped existing slug "${item.slug}"`);
+          continue;
+        }
+        throw err;
+      }
     }
   }
 
