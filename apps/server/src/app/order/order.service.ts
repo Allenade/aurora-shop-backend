@@ -16,6 +16,7 @@ import {
   TransactionStatus,
 } from '../payment-gateway/_contract/payment.types';
 import { TransactionService } from '../transaction/transaction.service';
+import { UserRepository } from '../user/repositories/user.repository';
 import {
   OrderEntity,
   type OrderStatus,
@@ -46,6 +47,7 @@ export class OrderService {
     private readonly products: Repository<ProductEntity>,
     private readonly transactions: TransactionService,
     private readonly inventory: InventoryService,
+    private readonly users: UserRepository,
     private readonly config: ConfigService<EnvTypes, true>,
   ) {}
 
@@ -149,6 +151,7 @@ export class OrderService {
     });
     order.transactionReference = tx.reference;
     await this.orders.save(order);
+    await this.saveDefaultShippingFromCheckout(input);
 
     return {
       ...this.toDto(order),
@@ -483,6 +486,22 @@ export class OrderService {
     if (status === 'in_transit') return 'In Transit';
     if (status === 'cancelled') return 'Cancelled';
     return 'Processing';
+  }
+
+  /** Persist checkout delivery fields as the buyer's next-form defaults. */
+  private async saveDefaultShippingFromCheckout(input: CheckoutInput) {
+    const user = await this.users.findById(input.userId);
+    if (!user) return;
+    user.defaultShipping = {
+      fullName: input.fullName.trim(),
+      email: input.email.trim().toLowerCase(),
+      phone: input.phone.trim(),
+      streetAddress: input.streetAddress.trim(),
+      city: input.city.trim(),
+      state: input.state.trim(),
+      note: input.note?.trim() || undefined,
+    };
+    await this.users.save(user);
   }
 
   toDto(order: OrderEntity) {
