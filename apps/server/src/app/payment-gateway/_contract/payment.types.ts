@@ -56,4 +56,6 @@ export interface PaymentProvider {
     payload: unknown,
     headers?: Record<string, string>,
   ): Promise<CallbackOutcome> | CallbackOutcome;
+  /** Ask the provider for the current state of a reference. */
+  verifyReference(reference: string): Promise<CallbackOutcome>;
 }

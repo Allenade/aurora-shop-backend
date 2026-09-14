@@ -42,4 +42,12 @@ export class BankTransferProvider implements PaymentProvider {
           : TransactionStatus.FAILED,
     };
   }
+
+  verifyReference(reference: string): Promise<CallbackOutcome> {
+    // Bank transfers are confirmed manually by admin — nothing to poll.
+    return Promise.resolve({
+      externalReference: reference,
+      status: TransactionStatus.PENDING,
+    });
+  }
 }

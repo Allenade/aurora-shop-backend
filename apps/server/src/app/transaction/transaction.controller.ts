@@ -1,8 +1,10 @@
-import { Body, Controller, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Action, Resource } from '@app/shared';
+import { Action, Resource, UserType } from '@app/shared';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import type { JwtPayload } from '../auth/dto/auth.types';
 import { TransactionProvider } from '../payment-gateway/_contract/payment.types';
 import { TransactionService } from './transaction.service';
 
@@ -25,6 +27,25 @@ export class TransactionController {
     @Headers() headers: Record<string, string>,
   ) {
     return this.transactions.handleCallback(provider, body, headers);
+  }
+
+  @Get(':reference/status')
+  @RequirePermissions({ action: Action.READ, resource: Resource.ORDER })
+  @ApiOperation({
+    operationId: 'getTransactionStatus',
+    summary: 'Payment Status',
+    description:
+      'Current payment state for a reference. Re-verifies pending transactions with the provider.',
+  })
+  status(
+    @Param('reference') reference: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.transactions.verifyForUser(
+      reference,
+      user.sub,
+      user.type === UserType.ADMIN,
+    );
   }
 
   @Post(':reference/confirm')
