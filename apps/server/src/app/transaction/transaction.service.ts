@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLogType, PaymentAuditAction } from '@app/shared';
@@ -10,9 +14,13 @@ import {
   TransactionProvider,
   TransactionReason,
   TransactionStatus,
+  type CallbackOutcome,
   type RegisterContext,
 } from '../payment-gateway/_contract/payment.types';
+import { BankTransferProvider } from '../payment-gateway/bank/bank-transfer.provider';
+import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { OrderEntity } from '../order/entities/order.entity';
+import { pollProviderPaymentStatus } from './poll-provider-payment-status';
 import { TransactionEntity } from './entities/transaction.entity';
 
 @Injectable()
@@ -23,6 +31,8 @@ export class TransactionService {
     @InjectRepository(OrderEntity)
     private readonly orders: Repository<OrderEntity>,
     private readonly registry: PaymentProviderRegistry,
+    private readonly paystack: PaystackProvider,
+    private readonly bank: BankTransferProvider,
     private readonly audit: AuditLogService,
     private readonly inventory: InventoryService,
   ) {}
@@ -96,6 +106,35 @@ export class TransactionService {
     if (row.status === TransactionStatus.SUCCESS) {
       return { message: 'Callback processed' };
     }
+    if (outcome.status === TransactionStatus.PENDING) {
+      // Untrusted or not-yet-final callback — nothing to record.
+      return { message: 'Callback processed' };
+    }
+    await this.applyOutcome(row, outcome);
+    return { message: 'Callback processed', transaction: row };
+  }
+
+  /** Ask the provider whether a pending reference has been paid yet. */
+  async verifyForUser(reference: string, userId: string, isAdmin: boolean) {
+    const row = await this.findByReference(reference);
+    if (!isAdmin && row.userId && row.userId !== userId) {
+      throw new ForbiddenException('Transaction not yours');
+    }
+    if (row.status !== TransactionStatus.PENDING) return this.toStatusDto(row);
+
+    const ref = row.externalReference ?? row.reference;
+    const outcome = await pollProviderPaymentStatus(row.provider, ref, {
+      paystack: this.paystack,
+      bank: this.bank,
+    });
+    if (outcome.status === TransactionStatus.PENDING) {
+      return this.toStatusDto(row);
+    }
+    await this.applyOutcome(row, outcome);
+    return this.toStatusDto(row);
+  }
+
+  private async applyOutcome(row: TransactionEntity, outcome: CallbackOutcome) {
     row.status = outcome.status;
     await this.rows.save(row);
     if (outcome.status === TransactionStatus.SUCCESS) {
@@ -111,7 +150,23 @@ export class TransactionService {
       resourceId: row.id,
       userId: row.userId,
     });
-    return { message: 'Callback processed', transaction: row };
+  }
+
+  private async toStatusDto(row: TransactionEntity) {
+    const order = await this.orders.findOne({
+      where: row.orderId ? { id: row.orderId } : { orderNumber: row.reference },
+    });
+    return {
+      reference: row.reference,
+      provider: row.provider,
+      status: row.status,
+      paid: row.status === TransactionStatus.SUCCESS,
+      amount: row.amount,
+      orderId: order?.id,
+      orderNumber: order?.orderNumber,
+      trackingNumber: order?.trackingNumber,
+      paymentStatus: order?.paymentStatus,
+    };
   }
 
   async markSuccess(reference: string) {

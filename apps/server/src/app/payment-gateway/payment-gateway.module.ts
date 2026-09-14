@@ -18,6 +18,6 @@ import { PaystackProvider } from './paystack/paystack.provider';
     },
     PaymentProviderRegistry,
   ],
-  exports: [PaymentProviderRegistry],
+  exports: [PaymentProviderRegistry, PaystackProvider, BankTransferProvider],
 })
 export class PaymentGatewayModule {}

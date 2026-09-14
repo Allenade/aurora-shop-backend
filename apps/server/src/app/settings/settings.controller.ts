@@ -261,6 +261,7 @@ export class SettingsController {
           date: order.date,
           amount: order.total,
           status: 'Paid',
+          trackingNumber: order.trackingNumber,
         })),
     };
   }
