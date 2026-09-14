@@ -21,9 +21,10 @@ export class PaystackProvider implements PaymentProvider {
     const secret = this.config.get('paystack.secretKey', { infer: true });
     const publicKey = this.config.get('paystack.publicKey', { infer: true });
     if (!secret) {
+      const separator = ctx.callbackUrl.includes('?') ? '&' : '?';
       return {
         externalReference: ctx.reference,
-        authorizationUrl: `${ctx.callbackUrl}?reference=${ctx.reference}&mock=1`,
+        authorizationUrl: `${ctx.callbackUrl}${separator}reference=${ctx.reference}&mock=1`,
         publicKey,
         metadata: { mode: 'mock' },
       };
@@ -72,12 +73,14 @@ export class PaystackProvider implements PaymentProvider {
   ): CallbackOutcome {
     const secret = this.config.get('paystack.secretKey', { infer: true });
     const raw = JSON.stringify(payload);
-    if (secret && headers?.['x-paystack-signature']) {
-      const expected = createHmac('sha256', secret).update(raw).digest('hex');
-      if (expected !== headers['x-paystack-signature']) {
+    if (secret) {
+      const signature = headers?.['x-paystack-signature'];
+      const expected = createHmac('sha512', secret).update(raw).digest('hex');
+      if (signature !== expected) {
+        // Unsigned or forged — leave the transaction untouched.
         return {
           externalReference: this.extractCallbackReference(payload) ?? '',
-          status: TransactionStatus.FAILED,
+          status: TransactionStatus.PENDING,
         };
       }
     }
@@ -91,6 +94,38 @@ export class PaystackProvider implements PaymentProvider {
     return {
       externalReference: reference,
       status: paid ? TransactionStatus.SUCCESS : TransactionStatus.FAILED,
+      receiptNumber: reference,
+    };
+  }
+
+  async verifyReference(reference: string): Promise<CallbackOutcome> {
+    const secret = this.config.get('paystack.secretKey', { infer: true });
+    if (!secret) {
+      return {
+        externalReference: reference,
+        status: TransactionStatus.SUCCESS,
+        receiptNumber: reference,
+        metadata: { mode: 'mock' },
+      };
+    }
+
+    const res = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      { headers: { Authorization: `Bearer ${secret}` } },
+    );
+    const body = (await res.json()) as {
+      status: boolean;
+      data?: { status?: string; reference?: string };
+    };
+    const state = body.data?.status;
+    return {
+      externalReference: body.data?.reference ?? reference,
+      status:
+        state === 'success'
+          ? TransactionStatus.SUCCESS
+          : state === 'failed'
+            ? TransactionStatus.FAILED
+            : TransactionStatus.PENDING,
       receiptNumber: reference,
     };
   }
