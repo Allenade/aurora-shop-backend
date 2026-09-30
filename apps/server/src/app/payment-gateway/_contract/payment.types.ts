@@ -23,6 +23,7 @@ export type RegisterContext = {
   lastName: string;
   phone?: string;
   callbackUrl: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type RegisterResult = {

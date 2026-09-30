@@ -9,6 +9,7 @@ import { AuditLogModule } from './app/audit-log/audit-log.module';
 import { AuthModule } from './app/auth/auth.module';
 import { CartModule } from './app/cart/cart.module';
 import { CatalogModule } from './app/catalog/catalog.module';
+import { EnterFirstModule } from './app/enter-first/enter-first.module';
 import { HealthModule } from './app/health/health.module';
 import { InventoryModule } from './app/inventory/inventory.module';
 import { OrderModule } from './app/order/order.module';
@@ -20,6 +21,7 @@ import { StorageModule } from './app/storage/storage.module';
 import { SettingsModule } from './app/settings/settings.module';
 import { TransactionModule } from './app/transaction/transaction.module';
 import { UserModule } from './app/user/user.module';
+import { MailModule } from './app/mail/mail.module';
 
 @Module({
   imports: [
@@ -34,6 +36,7 @@ import { UserModule } from './app/user/user.module';
     ScheduleModule.forRoot(),
     LoggerModule.forRootAsync(createLoggerModuleOpts('aurora-server')),
     DatabaseModule,
+    MailModule,
     AuditLogModule,
     AuthModule,
     RoleModule,
@@ -50,6 +53,7 @@ import { UserModule } from './app/user/user.module';
     AdminModule,
     SeedModule,
     StorageModule,
+    EnterFirstModule,
   ],
 })
 export class AppModule {}

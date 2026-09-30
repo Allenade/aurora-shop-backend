@@ -1,13 +1,16 @@
 import {
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLogType, PaymentAuditAction } from '@app/shared';
 import { randomInt } from 'crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { EnterFirstService } from '../enter-first/enter-first.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PaymentProviderRegistry } from '../payment-gateway/_contract/payment-provider.registry';
 import {
@@ -35,6 +38,8 @@ export class TransactionService {
     private readonly bank: BankTransferProvider,
     private readonly audit: AuditLogService,
     private readonly inventory: InventoryService,
+    @Inject(forwardRef(() => EnterFirstService))
+    private readonly enterFirst: EnterFirstService,
   ) {}
 
   nextReference() {
@@ -102,7 +107,14 @@ export class TransactionService {
     const row = await this.rows.findOne({
       where: [{ reference }, { externalReference: reference }],
     });
-    if (!row) return { message: 'Callback processed' };
+    if (!row) {
+      // Enter First enrollments share this Paystack webhook (`EF-…` refs).
+      const enterFirst = await this.enterFirst.handleProviderCallback(outcome);
+      if (enterFirst.handled) {
+        return { message: 'Callback processed', enterFirst };
+      }
+      return { message: 'Callback processed' };
+    }
     if (row.status === TransactionStatus.SUCCESS) {
       return { message: 'Callback processed' };
     }
