@@ -41,7 +41,11 @@ export class PaystackProvider implements PaymentProvider {
         amount: ctx.amount * 100,
         reference: ctx.reference,
         callback_url: ctx.callbackUrl,
-        metadata: { firstName: ctx.firstName, lastName: ctx.lastName },
+        metadata: {
+          firstName: ctx.firstName,
+          lastName: ctx.lastName,
+          ...(ctx.metadata ?? {}),
+        },
       }),
     });
     const body = (await res.json()) as {

@@ -22,6 +22,8 @@ enum Resource {
   USER = 'user',
   TRANSACTION = 'transaction',
   PAYMENT_GATEWAY = 'payment_gateway',
+  /** Aurora website / Enter First enrollments */
+  ENTER_FIRST = 'enter_first',
 }
 
 export { Action, Resource };

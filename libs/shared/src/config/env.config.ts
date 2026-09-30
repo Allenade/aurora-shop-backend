@@ -7,6 +7,8 @@ const envSchema = z.object({
     .enum(['development', 'test', 'production'])
     .default('development'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
+  /** Aurora marketing site (Enter First). Falls back to first FRONTEND_URL origin. */
+  WEBSITE_URL: z.string().optional().default(''),
   DATABASE_URL: z
     .string()
     .default('postgres://aurora:aurora@localhost:5432/aurora_shop'),
@@ -98,6 +100,14 @@ export function config() {
       allowedOrigins: env.FRONTEND_URL.split(',')
         .map((s) => s.trim())
         .filter(Boolean),
+    },
+    website: {
+      url:
+        env.WEBSITE_URL?.trim() ||
+        env.FRONTEND_URL.split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)[0] ||
+        'http://localhost:3000',
     },
     database: { url: env.DATABASE_URL },
     redis: { url: env.REDIS_URL },

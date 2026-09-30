@@ -14,6 +14,7 @@ import {
 } from '@app/shared';
 import * as bcrypt from 'bcrypt';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { MailService } from '../mail/mail.service';
 import { RoleRepository } from '../role/repositories/role.repository';
 import { UserRepository } from '../user/repositories/user.repository';
 import { AbilityFactoryService } from './ability/ability-factory.service';
@@ -30,6 +31,7 @@ export class AuthService {
     private readonly abilities: AbilityFactoryService,
     private readonly otp: OtpStore,
     private readonly audit: AuditLogService,
+    private readonly mail: MailService,
     private readonly config: ConfigService<EnvTypes, true>,
   ) {}
 
@@ -86,18 +88,50 @@ export class AuthService {
       dto.password,
       this.config.get('auth.saltRounds', { infer: true }),
     );
-    const code = await this.otp.issue(email, {
-      ...dto,
-      email,
-      passwordHash,
-    });
+    let code: string;
+    try {
+      code = await this.otp.issue(email, {
+        ...dto,
+        email,
+        passwordHash,
+      });
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error ? err.message : 'Unable to issue code',
+      );
+    }
     this.audit.log({
       type: AuditLogType.ACCESS,
       action: AccessAuditAction.OTP_REQUEST,
       resourceType: 'auth:otp',
     });
-    this.emitOtp(email, code);
+    await this.emitOtp(email, code);
     return { ok: true, email };
+  }
+
+  async resendOtp(emailRaw: string) {
+    const email = emailRaw.trim().toLowerCase();
+    const payload = await this.otp.peekPayload(email);
+    if (!payload) {
+      throw new BadRequestException(
+        'No pending signup for this email. Register again.',
+      );
+    }
+    let code: string;
+    try {
+      code = await this.otp.issue(email, payload);
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error ? err.message : 'Unable to resend code',
+      );
+    }
+    this.audit.log({
+      type: AuditLogType.ACCESS,
+      action: AccessAuditAction.OTP_REQUEST,
+      resourceType: 'auth:otp',
+    });
+    await this.emitOtp(email, code);
+    return { ok: true as const, email };
   }
 
   async verifyOtp(email: string, code: string) {
@@ -201,10 +235,15 @@ export class AuthService {
     return (await this.users.findByIdWithRoles(user.id))!;
   }
 
-  private emitOtp(email: string, code: string) {
-    const nodeEnv = this.config.get('nodeEnv', { infer: true });
-    if (nodeEnv !== 'production') {
-      console.log(`[aurora-otp] ${email} → ${code}`);
+  private async emitOtp(email: string, code: string) {
+    try {
+      await this.mail.sendSignupOtp(email, code);
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error
+          ? `Unable to send verification email: ${err.message}`
+          : 'Unable to send verification email',
+      );
     }
   }
 }

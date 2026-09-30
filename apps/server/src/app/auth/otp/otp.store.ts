@@ -60,10 +60,17 @@ export class OtpStore implements OnModuleDestroy {
       attempts: 0,
       expiresAt: now + expiryMinutes * 60_000,
       cooldownUntil: now + cooldown * 1000,
-      payload,
+      payload: payload ?? existing?.payload,
     };
     await this.write(key, record);
     return code;
+  }
+
+  /** Read pending signup payload without consuming the OTP. */
+  async peekPayload(email: string) {
+    const record = await this.read(this.key(email));
+    if (!record || record.expiresAt < Date.now()) return null;
+    return record.payload ?? null;
   }
 
   async verify(email: string, code: string) {
