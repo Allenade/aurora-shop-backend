@@ -27,7 +27,7 @@ export class OrderController {
     operationId: 'createCheckout',
     summary: 'Create Checkout',
     description:
-      'Server-priced checkout. Creates a pending ledger transaction.',
+      'Server-priced checkout. Card and bank both start a Paystack transaction. paymentMethod "bank" opens Paystack Pay with Transfer (channels: ["bank_transfer"]) and no longer returns account details. Redirect the buyer to payment.authorizationUrl.',
   })
   checkout(
     @CurrentUser() user: JwtPayload,

@@ -9,7 +9,12 @@ import { AuditLogModule } from './app/audit-log/audit-log.module';
 import { AuthModule } from './app/auth/auth.module';
 import { CartModule } from './app/cart/cart.module';
 import { CatalogModule } from './app/catalog/catalog.module';
+import { ComplianceModule } from './app/compliance/compliance.module';
+import { CourseModule } from './app/course/course.module';
+import { EmailModule } from './app/email/email.module';
 import { EnterFirstModule } from './app/enter-first/enter-first.module';
+import { OrgSettingsModule } from './app/org-settings/org-settings.module';
+import { RefundModule } from './app/refund/refund.module';
 import { HealthModule } from './app/health/health.module';
 import { InventoryModule } from './app/inventory/inventory.module';
 import { OrderModule } from './app/order/order.module';
@@ -31,7 +36,18 @@ import { MailModule } from './app/mail/mail.module';
       load: [config],
     }),
     ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 20 }],
+      throttlers: [
+        {
+          ttl: 60_000,
+          limit: Math.min(
+            300,
+            Math.max(
+              1,
+              Number(process.env.ENTER_FIRST_PUBLIC_RATE_LIMIT) || 20,
+            ),
+          ),
+        },
+      ],
     }),
     ScheduleModule.forRoot(),
     LoggerModule.forRootAsync(createLoggerModuleOpts('aurora-server')),
@@ -53,7 +69,12 @@ import { MailModule } from './app/mail/mail.module';
     AdminModule,
     SeedModule,
     StorageModule,
+    CourseModule,
     EnterFirstModule,
+    EmailModule,
+    RefundModule,
+    OrgSettingsModule,
+    ComplianceModule,
   ],
 })
 export class AppModule {}

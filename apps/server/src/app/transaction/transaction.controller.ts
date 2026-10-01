@@ -1,11 +1,12 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Post, Req } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Action, Resource, UserType } from '@app/shared';
+import type { Request } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/dto/auth.types';
-import { TransactionProvider } from '../payment-gateway/_contract/payment.types';
 import { TransactionService } from './transaction.service';
 
 @ApiTags('Transactions')
@@ -19,14 +20,20 @@ export class TransactionController {
   @ApiOperation({
     operationId: 'handlePaymentCallback',
     summary: 'Payment Webhook',
-    description: 'Provider webhook. Signature-checked inside the adapter.',
+    description:
+      'Paystack webhook. The HMAC-SHA512 signature is checked against the raw body. The bank provider callback has been removed; Pay with Transfer uses this Paystack endpoint.',
   })
   callback(
-    @Param('provider') provider: TransactionProvider,
-    @Body() body: unknown,
+    @Param('provider') provider: string,
+    @Req() req: RawBodyRequest<Request>,
     @Headers() headers: Record<string, string>,
   ) {
-    return this.transactions.handleCallback(provider, body, headers);
+    return this.transactions.handleCallback(
+      provider,
+      req.body,
+      headers,
+      req.rawBody,
+    );
   }
 
   @Get(':reference/status')
@@ -35,7 +42,7 @@ export class TransactionController {
     operationId: 'getTransactionStatus',
     summary: 'Payment Status',
     description:
-      'Current payment state for a reference. Re-verifies pending transactions with the provider.',
+      'Current payment state for a reference. Re-verifies pending transactions with Paystack, including amount and currency.',
   })
   status(
     @Param('reference') reference: string,
@@ -52,10 +59,11 @@ export class TransactionController {
   @RequirePermissions({ action: Action.MANAGE, resource: Resource.TRANSACTION })
   @ApiOperation({
     operationId: 'confirmBankTransfer',
-    summary: 'Confirm Transfer',
-    description: 'Admin marks a bank transfer as received.',
+    summary: 'Re-verify payment with Paystack',
+    description:
+      'Admin re-check. Succeeds only when Paystack verifies the reference, amount, and currency. It no longer marks a bank transfer paid by itself.',
   })
   confirm(@Param('reference') reference: string) {
-    return this.transactions.markSuccess(reference);
+    return this.transactions.confirmWithProvider(reference);
   }
 }

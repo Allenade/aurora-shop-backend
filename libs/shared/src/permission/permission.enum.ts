@@ -24,6 +24,16 @@ enum Resource {
   PAYMENT_GATEWAY = 'payment_gateway',
   /** Aurora website / Enter First enrollments */
   ENTER_FIRST = 'enter_first',
+  /** Core 3.0 training tracks and prices */
+  COURSE = 'course',
+  /** Compliance email templates, campaigns, and messages */
+  EMAIL = 'email',
+  /** Paystack refund requests */
+  REFUND = 'refund',
+  /** Admin audit log */
+  AUDIT = 'audit',
+  /** Compliance dashboard, data requests, retention */
+  COMPLIANCE = 'compliance',
 }
 
 export { Action, Resource };

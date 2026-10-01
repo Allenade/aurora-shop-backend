@@ -27,4 +27,13 @@ export class AuditLogEntity extends DatabaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, unknown>;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  ip?: string | null;
+
+  @Column({ name: 'user_agent', type: 'varchar', length: 512, nullable: true })
+  userAgent?: string | null;
+
+  @Column({ name: 'request_id', type: 'varchar', length: 80, nullable: true })
+  requestId?: string | null;
 }
