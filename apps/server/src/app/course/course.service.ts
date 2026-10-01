@@ -8,7 +8,12 @@ import { Repository } from 'typeorm';
 import { AuditLogType } from '@app/shared';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
-import { quoteCourses, type PricedCourse } from './course-pricing';
+import {
+  isEnrollable,
+  publishBlockReason,
+  quoteCourses,
+  type PricedCourse,
+} from './course-pricing';
 import { CORE30_TRACKS } from './course.tracks';
 import type {
   ReorderCoursesDto,
@@ -32,10 +37,17 @@ export class CourseService {
 
   async listPublic() {
     const rows = await this.courses.find({
-      where: [{ status: 'open' }, { status: 'closed' }],
+      where: { status: 'open' },
       order: { sortOrder: 'ASC', name: 'ASC' },
     });
-    return Promise.all(rows.map((row) => this.toPublicDto(row)));
+    const enrollable = rows.filter((row) =>
+      isEnrollable({
+        status: row.status,
+        isFree: row.isFree,
+        price: row.price,
+      }),
+    );
+    return Promise.all(enrollable.map((row) => this.toPublicDto(row)));
   }
 
   async listAdmin() {
@@ -72,34 +84,41 @@ export class CourseService {
     const existing = await this.courses.findOne({ where: { slug } });
     if (existing)
       throw new BadRequestException(`Course ${slug} already exists`);
+    const price = dto.price ?? null;
+    const isFree = dto.isFree ?? false;
+    const status = dto.status ?? 'draft';
+    const block = publishBlockReason({ status, isFree, price });
+    if (block) throw new BadRequestException(block);
     const row = await this.courses.save(
       this.courses.create({
         slug,
         name: dto.name.trim(),
         description: dto.description?.trim() ?? '',
-        price: dto.price,
+        price,
         currency: (dto.currency ?? 'NGN').toUpperCase(),
-        isFree: dto.isFree ?? false,
+        isFree,
         seatCap: dto.seatCap ?? null,
         startDate: parseDate(dto.startDate),
         endDate: parseDate(dto.endDate),
         enrollmentCutoff: parseDate(dto.enrollmentCutoff),
-        status: dto.status ?? 'draft',
+        status,
         sortOrder: dto.sortOrder ?? 0,
         cohort: dto.cohort?.trim() || null,
       }),
     );
-    await this.history.save(
-      this.history.create({
-        courseId: row.id,
-        changedBy: userId ?? null,
-        oldPrice: null,
-        newPrice: row.price,
-        oldCurrency: null,
-        newCurrency: row.currency,
-        effectiveFrom: new Date(),
-      }),
-    );
+    if (row.price != null) {
+      await this.history.save(
+        this.history.create({
+          courseId: row.id,
+          changedBy: userId ?? null,
+          oldPrice: null,
+          newPrice: row.price,
+          oldCurrency: null,
+          newCurrency: row.currency,
+          effectiveFrom: new Date(),
+        }),
+      );
+    }
     this.audit.log({
       type: AuditLogType.MUTATION,
       action: 'COURSE_CREATED',
@@ -113,6 +132,15 @@ export class CourseService {
 
   async update(id: string, dto: UpdateCourseDto, userId?: string) {
     const row = await this.findOrThrow(id);
+    const nextPrice = dto.price !== undefined ? dto.price : row.price;
+    const nextIsFree = dto.isFree !== undefined ? dto.isFree : row.isFree;
+    const nextStatus = dto.status !== undefined ? dto.status : row.status;
+    const block = publishBlockReason({
+      status: nextStatus,
+      isFree: nextIsFree,
+      price: nextPrice ?? null,
+    });
+    if (block) throw new BadRequestException(block);
     const previous = { price: row.price, currency: row.currency };
     if (dto.name !== undefined) row.name = dto.name.trim();
     if (dto.description !== undefined) row.description = dto.description.trim();
@@ -262,8 +290,8 @@ export class CourseService {
       .getCount();
   }
 
-  /** Insert the 8 Core 3.0 tracks when they are missing. Does not overwrite prices. */
-  async seedDefaults(priceNaira: number) {
+  /** Insert the 8 Core 3.0 tracks as unpublished drafts with no price. Does not overwrite. */
+  async seedDefaults() {
     for (const track of CORE30_TRACKS) {
       const existing = await this.courses.findOne({
         where: { slug: track.slug },
@@ -275,10 +303,10 @@ export class CourseService {
           slug: track.slug,
           name: track.name,
           description: track.description,
-          price: priceNaira,
+          price: null,
           currency: 'NGN',
           isFree: false,
-          status: 'open',
+          status: 'draft',
           sortOrder: track.sortOrder,
         }),
       );

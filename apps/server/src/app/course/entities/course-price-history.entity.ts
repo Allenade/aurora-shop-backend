@@ -21,8 +21,8 @@ export class CoursePriceHistoryEntity extends DatabaseEntity {
   @Column({ name: 'old_price', type: 'int', nullable: true })
   oldPrice?: number | null;
 
-  @Column({ name: 'new_price', type: 'int' })
-  newPrice: number;
+  @Column({ name: 'new_price', type: 'int', nullable: true })
+  newPrice: number | null;
 
   @Column({ name: 'old_currency', type: 'varchar', length: 8, nullable: true })
   oldCurrency?: string | null;

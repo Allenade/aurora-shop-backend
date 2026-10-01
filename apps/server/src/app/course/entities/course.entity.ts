@@ -16,9 +16,12 @@ export class CourseEntity extends DatabaseEntity {
   @Column({ type: 'text', default: '' })
   description: string;
 
-  /** Whole naira (or other major units), not kobo. */
-  @Column({ type: 'int', default: 0 })
-  price: number;
+  /**
+   * Whole naira (or other major units), not kobo.
+   * Null until an admin sets a price. Never defaulted.
+   */
+  @Column({ type: 'int', nullable: true })
+  price: number | null;
 
   @Column({ type: 'varchar', length: 8, default: 'NGN' })
   currency: string;

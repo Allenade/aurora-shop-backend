@@ -35,7 +35,7 @@ export class CourseController {
     operationId: 'listEnterFirstCourses',
     summary: 'Public Core 3.0 courses',
     description:
-      'Open and closed courses for the aurora2 catalogue. Prices are authoritative; the enroll endpoint ignores any client-supplied amount.',
+      'Published courses that are free or have a price set. Draft, closed, archived, and paid courses with no price are omitted. The enroll endpoint ignores any client-supplied amount.',
   })
   listPublic() {
     return this.courses.listPublic();
@@ -69,6 +69,8 @@ export class CourseController {
   @ApiOperation({
     operationId: 'createCourse',
     summary: 'Create course',
+    description:
+      'Price is optional and is never defaulted. Publishing (status open) a paid course without a price returns 400. Mark the course free or set a price first.',
   })
   create(@Body() body: UpsertCourseDto, @CurrentUser('sub') userId: string) {
     return this.courses.create(body, userId);
@@ -91,7 +93,8 @@ export class CourseController {
   @ApiOperation({
     operationId: 'updateCourse',
     summary: 'Update course',
-    description: 'Price changes are appended to course_price_history.',
+    description:
+      'Price changes are appended to course_price_history. Publishing a paid course without a price returns 400.',
   })
   update(
     @Param('id') id: string,

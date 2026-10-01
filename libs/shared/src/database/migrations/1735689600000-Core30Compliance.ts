@@ -17,7 +17,7 @@ export class Core30Compliance1735689600000 implements MigrationInterface {
         "slug" varchar(40) NOT NULL,
         "name" varchar(160) NOT NULL,
         "description" text NOT NULL DEFAULT '',
-        "price" integer NOT NULL DEFAULT 0,
+        "price" integer,
         "currency" varchar(8) NOT NULL DEFAULT 'NGN',
         "is_free" boolean NOT NULL DEFAULT false,
         "seat_cap" integer,
@@ -41,7 +41,7 @@ export class Core30Compliance1735689600000 implements MigrationInterface {
         "course_id" uuid NOT NULL,
         "changed_by" uuid,
         "old_price" integer,
-        "new_price" integer NOT NULL,
+        "new_price" integer,
         "old_currency" varchar(8),
         "new_currency" varchar(8) NOT NULL,
         "effective_from" timestamptz NOT NULL
@@ -235,14 +235,14 @@ export class Core30Compliance1735689600000 implements MigrationInterface {
         "slug", "name", "description", "price", "currency", "is_free", "status", "sort_order"
       )
       VALUES
-        ('iot', 'Internet of Things', 'Connected devices, sensors, and embedded networking.', 60000, 'NGN', false, 'open', 0),
-        ('mobile', 'Mobile Development', 'Mobile application engineering.', 60000, 'NGN', false, 'open', 1),
-        ('ai', 'Artificial Intelligence', 'Applied machine learning and AI systems.', 60000, 'NGN', false, 'open', 2),
-        ('blockchain', 'Blockchain', 'Distributed ledgers and smart contracts.', 60000, 'NGN', false, 'open', 3),
-        ('arm', 'ARM Embedded Systems', 'ARM architecture and embedded firmware.', 60000, 'NGN', false, 'open', 4),
-        ('vision', 'Computer Vision', 'Image understanding and vision systems.', 60000, 'NGN', false, 'open', 5),
-        ('programming', 'Programming', 'Software engineering fundamentals.', 60000, 'NGN', false, 'open', 6),
-        ('aerial', 'Aerial Robotics', 'Drones and aerial robotic systems.', 60000, 'NGN', false, 'open', 7)
+        ('iot', 'Internet of Things', 'Connected devices, sensors, and embedded networking.', NULL, 'NGN', false, 'draft', 0),
+        ('mobile', 'Mobile Development', 'Mobile application engineering.', NULL, 'NGN', false, 'draft', 1),
+        ('ai', 'Artificial Intelligence', 'Applied machine learning and AI systems.', NULL, 'NGN', false, 'draft', 2),
+        ('blockchain', 'Blockchain', 'Distributed ledgers and smart contracts.', NULL, 'NGN', false, 'draft', 3),
+        ('arm', 'ARM Embedded Systems', 'ARM architecture and embedded firmware.', NULL, 'NGN', false, 'draft', 4),
+        ('vision', 'Computer Vision', 'Image understanding and vision systems.', NULL, 'NGN', false, 'draft', 5),
+        ('programming', 'Programming', 'Software engineering fundamentals.', NULL, 'NGN', false, 'draft', 6),
+        ('aerial', 'Aerial Robotics', 'Drones and aerial robotic systems.', NULL, 'NGN', false, 'draft', 7)
       ON CONFLICT ("slug") DO NOTHING;
     `);
   }

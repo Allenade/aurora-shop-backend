@@ -69,7 +69,7 @@ describe('email queue policy', () => {
       kind: 'transactional',
       vars: {
         firstName: '<script>alert(1)</script>',
-        amount: 'NGN 60000',
+        amount: 'NGN 15000',
       },
     });
     expect(rendered.html).toContain(escapeHtml('<script>alert(1)</script>'));

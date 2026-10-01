@@ -4,7 +4,7 @@ import { verifyPaystackSignature } from './paystack-signature';
 describe('Paystack webhook signature', () => {
   const secret = 'sk_test_secret';
   const raw = Buffer.from(
-    '{"event":"charge.success","data":{"amount":6000000}}',
+    '{"event":"charge.success","data":{"amount":1500000}}',
   );
 
   it('accepts an HMAC-SHA512 of the raw body', () => {

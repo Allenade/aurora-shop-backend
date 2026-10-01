@@ -36,7 +36,7 @@ export class EnterFirstController {
     operationId: 'createEnterFirstEnrollment',
     summary: 'Enroll + start Paystack',
     description:
-      'Public website enrollment. Price is loaded from the course table (closed, full, and past-cutoff courses are rejected). Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
+      'Public website enrollment. Price is loaded from the course table. A course is accepted only when it is published (status open) and has a price set, or is free. Draft, closed, archived, full, past-cutoff, and unpaid courses are rejected. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
   })
   enroll(@Body() body: EnterFirstEnrollDto, @Req() req: Request) {
     return this.enterFirst.enroll(body, {

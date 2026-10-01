@@ -38,8 +38,14 @@ export class UpsertCourseDto {
   @IsInt()
   @Min(0)
   @Max(100_000_000)
-  @ApiProperty({ example: 60000, description: 'Major units, e.g. whole naira' })
-  price: number;
+  @IsOptional()
+  @ApiPropertyOptional({
+    example: 25000,
+    nullable: true,
+    description:
+      'Major units (whole naira). Omit until a price is set from the compliance dashboard. Publishing a paid course without a price returns 400.',
+  })
+  price?: number | null;
 
   @IsString()
   @MaxLength(8)
@@ -108,8 +114,13 @@ export class UpdateCourseDto {
   @Min(0)
   @Max(100_000_000)
   @IsOptional()
-  @ApiPropertyOptional()
-  price?: number;
+  @ApiPropertyOptional({
+    example: 25000,
+    nullable: true,
+    description:
+      'Major units (whole naira). Null clears the price on a draft. Publishing a paid course without a price returns 400.',
+  })
+  price?: number | null;
 
   @IsString()
   @MaxLength(8)

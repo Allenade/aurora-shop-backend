@@ -1,9 +1,12 @@
 export type CourseStatus = 'draft' | 'open' | 'closed' | 'archived';
 
+export const PUBLISH_WITHOUT_PRICE =
+  'Set a price before publishing a paid course, or mark it free';
+
 export type PricedCourse = {
   slug: string;
   name: string;
-  price: number;
+  price: number | null;
   currency: string;
   isFree: boolean;
   status: CourseStatus;
@@ -11,6 +14,27 @@ export type PricedCourse = {
   seatsTaken: number;
   enrollmentCutoff: Date | null;
 };
+
+/** Published (status open) and either free or carrying an admin-set price. */
+export function isEnrollable(course: {
+  status: CourseStatus;
+  isFree: boolean;
+  price: number | null;
+}): boolean {
+  return course.status === 'open' && (course.isFree || course.price != null);
+}
+
+/** 400 message when a paid course would be published with no price. */
+export function publishBlockReason(input: {
+  status: CourseStatus;
+  isFree: boolean;
+  price: number | null;
+}): string | null {
+  if (input.status === 'open' && !input.isFree && input.price == null) {
+    return PUBLISH_WITHOUT_PRICE;
+  }
+  return null;
+}
 
 export type QuoteLine = {
   slug: string;
@@ -46,6 +70,12 @@ export function quoteCourses(
         error: `Course ${course.slug} is not open for enrollment`,
       };
     }
+    if (!course.isFree && course.price == null) {
+      return {
+        ok: false,
+        error: `Course ${course.slug} has no price set`,
+      };
+    }
     if (
       course.enrollmentCutoff &&
       now.getTime() > course.enrollmentCutoff.getTime()
@@ -63,12 +93,18 @@ export function quoteCourses(
       return { ok: false, error: `Course ${course.slug} is full` };
     }
     const price = course.isFree ? 0 : course.price;
+    if (price == null) {
+      return {
+        ok: false,
+        error: `Course ${course.slug} has no price set`,
+      };
+    }
     lines.push({
       slug: course.slug,
       name: course.name,
       price,
       currency: course.currency,
-      isFree: course.isFree || price <= 0,
+      isFree: course.isFree,
       enrollmentCutoff: course.enrollmentCutoff
         ? course.enrollmentCutoff.toISOString()
         : null,

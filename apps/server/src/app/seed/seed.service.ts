@@ -17,7 +17,6 @@ import {
   PROCUREMENT_GRANTS,
 } from '../auth/auth.module';
 import { CourseService } from '../course/course.service';
-import { trackAmountNgn } from '../enter-first/enter-first.pricing';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
 import { ProductEntity } from '../catalog/entities/product.entity';
 import {
@@ -346,7 +345,7 @@ export class SeedService implements OnApplicationBootstrap {
     await this.ensureDefaultShippingColumn();
     try {
       await this.seedRoles();
-      await this.courses.seedDefaults(trackAmountNgn());
+      await this.courses.seedDefaults();
       await this.orgSettings.ensureDefaults();
     } catch (err) {
       this.logger.error(
