@@ -31,4 +31,7 @@ export type AuditLogEntry = {
   decision?: 'allow' | 'deny';
   reason?: string;
   metadata?: Record<string, unknown>;
+  ip?: string;
+  userAgent?: string;
+  requestId?: string;
 };

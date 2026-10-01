@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { EnvTypes } from '../config/env.config';
+import { Core30Compliance1735689600000 } from './migrations/1735689600000-Core30Compliance';
+import { CoursePriceNullable1735689700000 } from './migrations/1735689700000-CoursePriceNullable';
 
 @Module({
   imports: [
@@ -19,6 +21,11 @@ import type { EnvTypes } from '../config/env.config';
           ssl: isSsl ? { rejectUnauthorized: false } : false,
           autoLoadEntities: true,
           synchronize: config.get('nodeEnv', { infer: true }) !== 'production',
+          migrations: [
+            Core30Compliance1735689600000,
+            CoursePriceNullable1735689700000,
+          ],
+          migrationsRun: true,
           logging: false,
         };
       },

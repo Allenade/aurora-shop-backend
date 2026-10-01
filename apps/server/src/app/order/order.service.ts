@@ -131,12 +131,11 @@ export class OrderService {
     const frontend = this.config.get('frontend.allowedOrigins', {
       infer: true,
     })[0];
+    const channels =
+      input.paymentMethod === 'bank' ? ['bank_transfer'] : ['card'];
     const tx = await this.transactions.create({
       amount: total,
-      provider:
-        input.paymentMethod === 'card'
-          ? TransactionProvider.PAYSTACK
-          : TransactionProvider.BANK,
+      provider: TransactionProvider.PAYSTACK,
       userId: input.userId,
       orderId: order.id,
       register: {
@@ -147,6 +146,8 @@ export class OrderService {
         lastName: input.fullName.split(' ').slice(1).join(' ') || 'Customer',
         phone: input.phone,
         callbackUrl: `${frontend}/cart?pay=${orderNumber}`,
+        channels,
+        metadata: { paymentMethod: input.paymentMethod },
       },
     });
     order.transactionReference = tx.reference;
@@ -159,8 +160,14 @@ export class OrderService {
         provider: tx.provider,
         reference: tx.reference,
         authorizationUrl: tx.authorizationUrl,
-        bank: (tx as { bank?: unknown }).bank,
         publicKey: (tx as { publicKey?: string }).publicKey,
+        channels,
+        /**
+         * Always null. Bank transfer no longer returns our account details;
+         * redirect the buyer to authorizationUrl (Paystack Pay with Transfer
+         * when paymentMethod is "bank").
+         */
+        bank: null,
       },
     };
   }

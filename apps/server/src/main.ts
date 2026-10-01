@@ -27,6 +27,7 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
 
   const configService = app.get(ConfigService<EnvTypes, true>);
+  app.set('trust proxy', configService.get('http.trustProxy', { infer: true }));
   app.enableCors({
     origin: configService.get('frontend.allowedOrigins', { infer: true }),
     credentials: true,

@@ -69,6 +69,12 @@ export class VerifyOtpDto {
   code: string;
 }
 
+export class ResendOtpDto {
+  @IsEmail()
+  @ApiProperty()
+  email: string;
+}
+
 export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty()

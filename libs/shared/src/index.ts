@@ -1,5 +1,11 @@
-export { config, validateConfig } from './config/env.config';
-export type { EnvTypes, RawEnv } from './config/env.config';
+export {
+  config,
+  parseRateLimitEnabled,
+  parseTrustProxy,
+  productionConfigErrors,
+  validateConfig,
+} from './config/env.config';
+export type { EnvTypes, RawEnv, TrustProxy } from './config/env.config';
 export { Action, Resource } from './permission/permission.enum';
 export { UserType, UserStatus } from './user/user.enums';
 export {

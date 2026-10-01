@@ -7,6 +7,8 @@ const envSchema = z.object({
     .enum(['development', 'test', 'production'])
     .default('development'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
+  /** Aurora marketing site (Enter First). Falls back to first FRONTEND_URL origin. */
+  WEBSITE_URL: z.string().optional().default(''),
   DATABASE_URL: z
     .string()
     .default('postgres://aurora:aurora@localhost:5432/aurora_shop'),
@@ -27,6 +29,15 @@ const envSchema = z.object({
 
   PAYSTACK_SECRET_KEY: z.string().optional().default(''),
   PAYSTACK_PUBLIC_KEY: z.string().optional().default(''),
+  /**
+   * Hops of reverse proxies to trust when reading X-Forwarded-For.
+   * `false`/`0` ignores the header. `1` is typical behind one load balancer.
+   */
+  TRUST_PROXY: z.string().optional().default('false'),
+  RATE_LIMIT_ENABLED: z.string().optional(),
+  ENTER_FIRST_PUBLIC_RATE_LIMIT: z.coerce.number().default(20),
+  /** Absolute origin used in email links such as unsubscribe. */
+  PUBLIC_API_URL: z.string().optional().default(''),
   PAYMENT_CREDENTIALS_ENC_KEY: z
     .string()
     .default('dev-insecure-payments-encryption-key-change-me'),
@@ -43,6 +54,10 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional().default(''),
   RESEND_FROM_EMAIL: z.string().default('no-reply@aurora.local'),
   RESEND_FROM_NAME: z.string().default('Aurora Stores'),
+  RESEND_WEBHOOK_SECRET: z.string().optional().default(''),
+  UNSUBSCRIBE_TOKEN_SECRET: z.string().optional().default(''),
+  EMAIL_MAX_ATTEMPTS: z.coerce.number().default(5),
+  EMAIL_BATCH_SIZE: z.coerce.number().default(100),
 
   CLOUDFLARE_ACCOUNT_ID: z.string().optional().default(''),
   R2_ACCESS_KEY_ID: z.string().optional().default(''),
@@ -64,6 +79,49 @@ const envSchema = z.object({
 
 export type RawEnv = z.infer<typeof envSchema>;
 
+/** `false` ignores X-Forwarded-For. A number is how many proxy hops to trust. */
+export type TrustProxy = false | number;
+
+export function parseTrustProxy(raw: string | undefined): TrustProxy {
+  const value = (raw ?? 'false').trim().toLowerCase();
+  if (
+    !value ||
+    value === 'false' ||
+    value === '0' ||
+    value === 'off' ||
+    value === 'no'
+  ) {
+    return false;
+  }
+  if (value === 'true' || value === 'yes' || value === 'on') return 1;
+  const hops = Number(value);
+  if (!Number.isInteger(hops) || hops < 0) return false;
+  return hops === 0 ? false : hops;
+}
+
+export function parseRateLimitEnabled(raw: string | undefined): boolean {
+  if (raw == null || raw.trim() === '') return true;
+  return !['0', 'false', 'no', 'off'].includes(raw.trim().toLowerCase());
+}
+
+export function productionConfigErrors(env: RawEnv): string[] {
+  if (env.NODE_ENV !== 'production') return [];
+  const errors: string[] = [];
+  if (env.JWT_SECRET_KEY.includes('change-me')) {
+    errors.push('JWT_SECRET_KEY must be set in production');
+  }
+  if (env.PAYMENT_CREDENTIALS_ENC_KEY.includes('change-me')) {
+    errors.push('PAYMENT_CREDENTIALS_ENC_KEY must be set in production');
+  }
+  if (!env.DOCS_PASSWORD || env.DOCS_PASSWORD === 'replace-me') {
+    errors.push('DOCS_PASSWORD must be set in production');
+  }
+  if (!env.PAYSTACK_SECRET_KEY) {
+    errors.push('PAYSTACK_SECRET_KEY must be set in production');
+  }
+  return errors;
+}
+
 export function validateConfig() {
   try {
     return envSchema.parse(process.env);
@@ -78,16 +136,9 @@ export type EnvTypes = ReturnType<typeof config>;
 export function config() {
   const env = validateConfig();
 
-  if (env.NODE_ENV === 'production') {
-    if (env.JWT_SECRET_KEY.includes('change-me')) {
-      throw new Error('JWT_SECRET_KEY must be set in production');
-    }
-    if (env.PAYMENT_CREDENTIALS_ENC_KEY.includes('change-me')) {
-      throw new Error('PAYMENT_CREDENTIALS_ENC_KEY must be set in production');
-    }
-    if (!env.DOCS_PASSWORD || env.DOCS_PASSWORD === 'replace-me') {
-      throw new Error('DOCS_PASSWORD must be set in production');
-    }
+  const productionErrors = productionConfigErrors(env);
+  if (productionErrors.length) {
+    throw new Error(productionErrors.join('; '));
   }
 
   return {
@@ -98,6 +149,14 @@ export function config() {
       allowedOrigins: env.FRONTEND_URL.split(',')
         .map((s) => s.trim())
         .filter(Boolean),
+    },
+    website: {
+      url:
+        env.WEBSITE_URL?.trim() ||
+        env.FRONTEND_URL.split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)[0] ||
+        'http://localhost:3000',
     },
     database: { url: env.DATABASE_URL },
     redis: { url: env.REDIS_URL },
@@ -121,6 +180,15 @@ export function config() {
       secretKey: env.PAYSTACK_SECRET_KEY,
       publicKey: env.PAYSTACK_PUBLIC_KEY,
     },
+    http: {
+      trustProxy: parseTrustProxy(env.TRUST_PROXY),
+      rateLimitEnabled: parseRateLimitEnabled(env.RATE_LIMIT_ENABLED),
+      publicRateLimit: Math.min(
+        300,
+        Math.max(1, env.ENTER_FIRST_PUBLIC_RATE_LIMIT),
+      ),
+      publicApiUrl: env.PUBLIC_API_URL?.replace(/\/$/, '') ?? '',
+    },
     payments: {
       credentialsEncKey: env.PAYMENT_CREDENTIALS_ENC_KEY,
     },
@@ -139,6 +207,12 @@ export function config() {
       apiKey: env.RESEND_API_KEY,
       fromEmail: env.RESEND_FROM_EMAIL,
       fromName: env.RESEND_FROM_NAME,
+      webhookSecret: env.RESEND_WEBHOOK_SECRET,
+      maxAttempts: Math.min(10, Math.max(1, env.EMAIL_MAX_ATTEMPTS)),
+      batchSize: Math.min(100, Math.max(1, env.EMAIL_BATCH_SIZE)),
+    },
+    unsubscribe: {
+      secret: env.UNSUBSCRIBE_TOKEN_SECRET || env.JWT_SECRET_KEY,
     },
     logging: {
       level: env.LOG_LEVEL,
