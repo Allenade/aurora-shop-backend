@@ -15,6 +15,8 @@ export enum TransactionReason {
   ORDER = 'order',
 }
 
+export type PaymentConfirmationSource = 'webhook' | 'poll' | 'admin';
+
 export type RegisterContext = {
   amount: number;
   reference: string;
@@ -23,6 +25,8 @@ export type RegisterContext = {
   lastName: string;
   phone?: string;
   callbackUrl: string;
+  /** Paystack checkout channels. Bank transfer is `bank_transfer` (Pay with Transfer). */
+  channels?: string[];
   metadata?: Record<string, unknown>;
 };
 
@@ -44,6 +48,13 @@ export type CallbackOutcome = {
   status: TransactionStatus;
   receiptNumber?: string;
   metadata?: Record<string, unknown>;
+  /** Paystack transaction id (numeric id as string). */
+  paystackTransactionId?: string;
+  /** Amount actually charged, in major units (naira). */
+  amount?: number;
+  currency?: string;
+  channel?: string;
+  confirmedVia?: PaymentConfirmationSource;
 };
 
 export interface PaymentProvider {

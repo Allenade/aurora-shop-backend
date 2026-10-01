@@ -92,7 +92,8 @@ export class AuthController {
   @ApiOperation({
     operationId: 'getAuthMe',
     summary: 'Current User',
-    description: 'Session user with CASL roles, permissions, and rules.',
+    description:
+      'Session user with roles and permissions. `manage` on `all` allows every action. compliance_viewer omits `pii` (dashboard should mask). compliance_manager includes refund, email, and compliance updates. super_admin includes course, settings, and user permissions.',
   })
   me(@CurrentUser('sub') userId: string) {
     return this.auth.me(userId);

@@ -27,7 +27,7 @@ export class OrderController {
     operationId: 'createCheckout',
     summary: 'Create Checkout',
     description:
-      'Server-priced checkout. Creates a pending ledger transaction.',
+      'Server-priced checkout. Card and bank both open Paystack. `paymentMethod: bank` requests the Pay with Transfer channel and no longer returns manual account details.',
   })
   checkout(
     @CurrentUser() user: JwtPayload,

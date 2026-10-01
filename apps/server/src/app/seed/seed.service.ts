@@ -10,7 +10,12 @@ import {
 } from '@app/shared';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
-import { ADMIN_GRANTS, PROCUREMENT_GRANTS } from '../auth/auth.module';
+import {
+  COMPLIANCE_MANAGER_GRANTS,
+  COMPLIANCE_VIEWER_GRANTS,
+  PROCUREMENT_GRANTS,
+  SUPER_ADMIN_GRANTS,
+} from '../auth/role-grants';
 import { ProductEntity } from '../catalog/entities/product.entity';
 import {
   OrderEntity,
@@ -334,9 +339,15 @@ export class SeedService implements OnApplicationBootstrap {
   async onApplicationBootstrap() {
     await this.ensureAvatarColumn();
     await this.ensureDefaultShippingColumn();
-    if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
     try {
       await this.seedRoles();
+    } catch (err) {
+      this.logger.warn(
+        `Role seed skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
+    try {
       await this.seedUsers();
       await this.seedCatalog();
       await this.seedOrders();
@@ -386,10 +397,17 @@ export class SeedService implements OnApplicationBootstrap {
       'Procurement Buyer',
       PROCUREMENT_GRANTS,
     );
-    await this.ensureRole('super_admin', 'Super Admin', [
-      ...ADMIN_GRANTS,
-      { action: Action.MANAGE, resource: Resource.ALL },
-    ]);
+    await this.ensureRole(
+      'compliance_viewer',
+      'Compliance Viewer',
+      COMPLIANCE_VIEWER_GRANTS,
+    );
+    await this.ensureRole(
+      'compliance_manager',
+      'Compliance Manager',
+      COMPLIANCE_MANAGER_GRANTS,
+    );
+    await this.ensureRole('super_admin', 'Super Admin', SUPER_ADMIN_GRANTS);
   }
 
   private async ensureRole(

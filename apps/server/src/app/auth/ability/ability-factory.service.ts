@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Action, Resource } from '@app/shared';
-import { UserEntity } from '../../user/entities/user.entity';
+import { Action, Resource } from '@app/shared/permission/permission.enum';
+import type { UserEntity } from '../../user/entities/user.entity';
+import { permissionAllows } from '../permission-check';
 import type {
   SessionPermission,
   SessionRole,
@@ -51,14 +52,6 @@ export class AbilityFactoryService {
   }
 
   can(user: SessionUser, action: Action, resource: Resource) {
-    const act = action as string;
-    const res = resource as string;
-    return user.permissions.some(
-      (permission) =>
-        (permission.action === (Action.MANAGE as string) &&
-          (permission.resource === (Resource.ALL as string) ||
-            permission.resource === res)) ||
-        (permission.action === act && permission.resource === res),
-    );
+    return permissionAllows(user.permissions, action, resource);
   }
 }

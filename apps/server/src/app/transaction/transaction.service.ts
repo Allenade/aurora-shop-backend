@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -20,7 +22,7 @@ import {
   type CallbackOutcome,
   type RegisterContext,
 } from '../payment-gateway/_contract/payment.types';
-import { BankTransferProvider } from '../payment-gateway/bank/bank-transfer.provider';
+import { evaluateCharge } from '../payment-gateway/paystack/charge-match';
 import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { OrderEntity } from '../order/entities/order.entity';
 import { pollProviderPaymentStatus } from './poll-provider-payment-status';
@@ -35,7 +37,6 @@ export class TransactionService {
     private readonly orders: Repository<OrderEntity>,
     private readonly registry: PaymentProviderRegistry,
     private readonly paystack: PaystackProvider,
-    private readonly bank: BankTransferProvider,
     private readonly audit: AuditLogService,
     private readonly inventory: InventoryService,
     @Inject(forwardRef(() => EnterFirstService))
@@ -97,13 +98,22 @@ export class TransactionService {
 
   async handleCallback(
     provider: TransactionProvider,
-    payload: unknown,
     headers?: Record<string, string>,
+    rawBody?: Buffer,
   ) {
-    const adapter = this.registry.get(provider);
-    const reference = adapter.extractCallbackReference(payload, headers);
+    if (provider !== TransactionProvider.PAYSTACK) {
+      throw new BadRequestException(
+        'Only Paystack webhooks are accepted. Collect bank transfers with Paystack Pay with Transfer.',
+      );
+    }
+    const signature = headers?.['x-paystack-signature'];
+    if (!rawBody || !this.paystack.verifySignature(rawBody, signature)) {
+      throw new UnauthorizedException('Invalid Paystack signature');
+    }
+    const outcome = this.paystack.parseVerifiedPayload(rawBody);
+    outcome.confirmedVia = 'webhook';
+    const reference = outcome.externalReference;
     if (!reference) return { message: 'Callback processed' };
-    const outcome = await adapter.parseCallback(payload, headers);
     const row = await this.rows.findOne({
       where: [{ reference }, { externalReference: reference }],
     });
@@ -135,10 +145,13 @@ export class TransactionService {
     if (row.status !== TransactionStatus.PENDING) return this.toStatusDto(row);
 
     const ref = row.externalReference ?? row.reference;
+    if (row.metadata?.reconciliationException === 'amount_mismatch') {
+      return this.toStatusDto(row);
+    }
     const outcome = await pollProviderPaymentStatus(row.provider, ref, {
       paystack: this.paystack,
-      bank: this.bank,
     });
+    outcome.confirmedVia = 'poll';
     if (outcome.status === TransactionStatus.PENDING) {
       return this.toStatusDto(row);
     }
@@ -147,7 +160,49 @@ export class TransactionService {
   }
 
   private async applyOutcome(row: TransactionEntity, outcome: CallbackOutcome) {
+    if (
+      outcome.status === TransactionStatus.SUCCESS &&
+      evaluateCharge(
+        { amount: row.amount, currency: 'NGN' },
+        {
+          amount: outcome.amount,
+          currency: outcome.currency,
+          mock: outcome.metadata?.mode === 'mock',
+        },
+      ) !== 'match'
+    ) {
+      row.metadata = {
+        ...(row.metadata ?? {}),
+        reconciliationException: 'amount_mismatch',
+        paidAmount: outcome.amount ?? null,
+        paidCurrency: outcome.currency ?? null,
+        paystackTransactionId: outcome.paystackTransactionId ?? null,
+        channel: outcome.channel ?? null,
+        confirmedVia: outcome.confirmedVia ?? null,
+      };
+      await this.rows.save(row);
+      this.audit.log({
+        type: AuditLogType.PAYMENT,
+        action: PaymentAuditAction.FAILED,
+        resourceType: 'transaction',
+        resourceId: row.id,
+        userId: row.userId,
+        reason: 'amount_mismatch',
+      });
+      return;
+    }
+
     row.status = outcome.status;
+    row.metadata = {
+      ...(row.metadata ?? {}),
+      paystackTransactionId: outcome.paystackTransactionId ?? null,
+      paidAmount: outcome.amount ?? null,
+      paidCurrency: outcome.currency ?? null,
+      channel: outcome.channel ?? null,
+      verifiedAt: new Date().toISOString(),
+      confirmedVia: outcome.confirmedVia ?? null,
+      reconciliationException: null,
+    };
     await this.rows.save(row);
     if (outcome.status === TransactionStatus.SUCCESS) {
       await this.markOrderPaid(row);
@@ -179,20 +234,6 @@ export class TransactionService {
       trackingNumber: order?.trackingNumber,
       paymentStatus: order?.paymentStatus,
     };
-  }
-
-  async markSuccess(reference: string) {
-    const row = await this.findByReference(reference);
-    row.status = TransactionStatus.SUCCESS;
-    await this.rows.save(row);
-    await this.markOrderPaid(row);
-    this.audit.log({
-      type: AuditLogType.PAYMENT,
-      action: PaymentAuditAction.SUCCESS,
-      resourceType: 'transaction',
-      resourceId: row.id,
-    });
-    return row;
   }
 
   private async markOrderPaid(row: TransactionEntity) {

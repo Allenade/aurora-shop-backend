@@ -9,6 +9,15 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   /** Aurora marketing site (Enter First). Falls back to first FRONTEND_URL origin. */
   WEBSITE_URL: z.string().optional().default(''),
+  /** Compliance dashboard origin. Added to CORS alongside FRONTEND_URL. */
+  DASHBOARD_URL: z.string().optional().default(''),
+  /** Public base URL of this API, used in email links. */
+  API_PUBLIC_URL: z.string().default('http://localhost:4000'),
+  /**
+   * How many reverse proxies may append X-Forwarded-For.
+   * 0 ignores the header. 1 trusts a single proxy (dashboard BFF or ingress).
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
   DATABASE_URL: z
     .string()
     .default('postgres://aurora:aurora@localhost:5432/aurora_shop'),
@@ -29,6 +38,8 @@ const envSchema = z.object({
 
   PAYSTACK_SECRET_KEY: z.string().optional().default(''),
   PAYSTACK_PUBLIC_KEY: z.string().optional().default(''),
+  /** Whole Naira per Core 3.0 track when seeding course prices. */
+  ENTER_FIRST_TRACK_AMOUNT_NGN: z.coerce.number().default(60_000),
   PAYMENT_CREDENTIALS_ENC_KEY: z
     .string()
     .default('dev-insecure-payments-encryption-key-change-me'),
@@ -45,6 +56,8 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional().default(''),
   RESEND_FROM_EMAIL: z.string().default('no-reply@aurora.local'),
   RESEND_FROM_NAME: z.string().default('Aurora Stores'),
+  /** Svix signing secret for Resend webhooks (`whsec_…`). */
+  RESEND_WEBHOOK_SECRET: z.string().optional().default(''),
 
   CLOUDFLARE_ACCOUNT_ID: z.string().optional().default(''),
   R2_ACCESS_KEY_ID: z.string().optional().default(''),
@@ -90,6 +103,9 @@ export function config() {
     if (!env.DOCS_PASSWORD || env.DOCS_PASSWORD === 'replace-me') {
       throw new Error('DOCS_PASSWORD must be set in production');
     }
+    if (!env.PAYSTACK_SECRET_KEY) {
+      throw new Error('PAYSTACK_SECRET_KEY must be set in production');
+    }
   }
 
   return {
@@ -97,10 +113,24 @@ export function config() {
     host: env.HOST,
     nodeEnv: env.NODE_ENV,
     frontend: {
-      allowedOrigins: env.FRONTEND_URL.split(',')
+      allowedOrigins: [
+        ...env.FRONTEND_URL.split(','),
+        ...env.DASHBOARD_URL.split(','),
+      ]
         .map((s) => s.trim())
-        .filter(Boolean),
+        .filter(Boolean)
+        .filter((origin, index, all) => all.indexOf(origin) === index),
     },
+    dashboard: {
+      url:
+        env.DASHBOARD_URL.split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)[0] ?? '',
+    },
+    api: {
+      publicUrl: env.API_PUBLIC_URL.replace(/\/$/, ''),
+    },
+    trustProxyHops: env.TRUST_PROXY_HOPS,
     website: {
       url:
         env.WEBSITE_URL?.trim() ||
@@ -149,6 +179,10 @@ export function config() {
       apiKey: env.RESEND_API_KEY,
       fromEmail: env.RESEND_FROM_EMAIL,
       fromName: env.RESEND_FROM_NAME,
+      webhookSecret: env.RESEND_WEBHOOK_SECRET,
+    },
+    enterFirst: {
+      seedTrackAmountNgn: env.ENTER_FIRST_TRACK_AMOUNT_NGN,
     },
     logging: {
       level: env.LOG_LEVEL,

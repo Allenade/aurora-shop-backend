@@ -131,12 +131,13 @@ export class OrderService {
     const frontend = this.config.get('frontend.allowedOrigins', {
       infer: true,
     })[0];
+    const paystackChannels =
+      input.paymentMethod === 'bank'
+        ? ['bank_transfer']
+        : ['card', 'bank', 'ussd', 'qr', 'bank_transfer'];
     const tx = await this.transactions.create({
       amount: total,
-      provider:
-        input.paymentMethod === 'card'
-          ? TransactionProvider.PAYSTACK
-          : TransactionProvider.BANK,
+      provider: TransactionProvider.PAYSTACK,
       userId: input.userId,
       orderId: order.id,
       register: {
@@ -147,6 +148,7 @@ export class OrderService {
         lastName: input.fullName.split(' ').slice(1).join(' ') || 'Customer',
         phone: input.phone,
         callbackUrl: `${frontend}/cart?pay=${orderNumber}`,
+        channels: paystackChannels,
       },
     });
     order.transactionReference = tx.reference;
@@ -156,11 +158,13 @@ export class OrderService {
     return {
       ...this.toDto(order),
       payment: {
-        provider: tx.provider,
+        provider: 'paystack' as const,
         reference: tx.reference,
         authorizationUrl: tx.authorizationUrl,
-        bank: (tx as { bank?: unknown }).bank,
         publicKey: (tx as { publicKey?: string }).publicKey,
+        channel: input.paymentMethod === 'bank' ? 'bank_transfer' : 'checkout',
+        /** Removed: bank account details are no longer returned. Redirect to authorizationUrl. */
+        bank: null,
       },
     };
   }

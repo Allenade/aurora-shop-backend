@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { AuditLogEntry } from '@app/shared';
-import { AuditLogEntity } from './entities/audit-log.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { currentRequestContext } from '../../common/request-context';
+import { AuditLogEntity } from './entities/audit-log.entity';
 
 const SENSITIVE = /password|token|secret|otp|pin|key|cvv|card/i;
 
@@ -25,10 +26,15 @@ export class AuditLogService {
   ) {}
 
   log(entry: AuditLogEntry) {
+    const ctx = currentRequestContext();
     void this.repo
       .save(
         this.repo.create({
           ...entry,
+          userId: entry.userId ?? ctx?.userId,
+          ip: entry.ip ?? ctx?.ip,
+          userAgent: entry.userAgent ?? ctx?.userAgent,
+          requestId: entry.requestId ?? ctx?.requestId,
           metadata: entry.metadata
             ? (redact(entry.metadata) as Record<string, unknown>)
             : undefined,

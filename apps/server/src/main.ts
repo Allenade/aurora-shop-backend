@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import type { EnvTypes } from '@app/shared';
+import cookieParser from 'cookie-parser';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -14,7 +15,10 @@ async function bootstrap() {
     rawBody: true,
     bufferLogs: true,
   });
+  const configService = app.get(ConfigService<EnvTypes, true>);
+  app.set('trust proxy', configService.get('trustProxyHops', { infer: true }));
   app.useLogger(app.get(Logger));
+  app.use(cookieParser());
   app.use(requestIdMiddleware);
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
@@ -26,10 +30,16 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const configService = app.get(ConfigService<EnvTypes, true>);
   app.enableCors({
     origin: configService.get('frontend.allowedOrigins', { infer: true }),
     credentials: true,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Request-Id',
+      'X-Forwarded-For',
+    ],
+    exposedHeaders: ['X-Request-Id'],
   });
   setupSwagger(app, configService);
   app.enableShutdownHooks();
