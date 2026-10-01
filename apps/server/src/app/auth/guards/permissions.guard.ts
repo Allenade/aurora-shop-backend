@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AccessAuditAction, AuditLogType } from '@app/shared';
+import { clientIpFromRequest } from '../../../common/http/client-ip';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { UserRepository } from '../../user/repositories/user.repository';
 import { AbilityFactoryService } from '../ability/ability-factory.service';
@@ -39,7 +40,11 @@ export class PermissionsGuard implements CanActivate {
       ) ?? [];
     if (requirements.length === 0) return true;
 
-    const request = context.switchToHttp().getRequest<{ user: JwtPayload }>();
+    const request = context.switchToHttp().getRequest<{
+      user: JwtPayload;
+      headers: Record<string, string | string[] | undefined>;
+      socket?: { remoteAddress?: string | null };
+    }>();
     const user = await this.users.findByIdWithRoles(request.user.sub);
     if (!user) throw new ForbiddenException('Account not found');
 
@@ -54,6 +59,9 @@ export class PermissionsGuard implements CanActivate {
         userId: user.id,
         resourceType: requirements.map((r) => r.resource).join(','),
         decision: 'deny',
+        ip: clientIpFromRequest(request),
+        userAgent: String(request.headers['user-agent'] ?? ''),
+        requestId: String(request.headers['x-request-id'] ?? ''),
       });
       throw new ForbiddenException('Insufficient permissions');
     }

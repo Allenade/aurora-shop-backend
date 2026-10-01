@@ -13,8 +13,9 @@ export const ENTER_FIRST_TRACK_IDS = [
 export type EnterFirstTrackId = (typeof ENTER_FIRST_TRACK_IDS)[number];
 
 /**
- * Naira amount charged per track (every track is paid).
- * Override with ENTER_FIRST_TRACK_AMOUNT_NGN (whole naira, not kobo).
+ * Initial naira price used only when seeding a missing course.
+ * Live charges come from the course table, not this value.
+ * Override the seed default with ENTER_FIRST_TRACK_AMOUNT_NGN (whole naira).
  */
 export function trackAmountNgn(): number {
   const raw = process.env.ENTER_FIRST_TRACK_AMOUNT_NGN?.trim();

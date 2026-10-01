@@ -10,7 +10,15 @@ import {
 } from '@app/shared';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
-import { ADMIN_GRANTS, PROCUREMENT_GRANTS } from '../auth/auth.module';
+import {
+  ADMIN_GRANTS,
+  COMPLIANCE_MANAGER_GRANTS,
+  COMPLIANCE_VIEWER_GRANTS,
+  PROCUREMENT_GRANTS,
+} from '../auth/auth.module';
+import { CourseService } from '../course/course.service';
+import { trackAmountNgn } from '../enter-first/enter-first.pricing';
+import { OrgSettingsService } from '../org-settings/org-settings.service';
 import { ProductEntity } from '../catalog/entities/product.entity';
 import {
   OrderEntity,
@@ -329,14 +337,24 @@ export class SeedService implements OnApplicationBootstrap {
     @InjectRepository(QuoteEntity)
     private readonly quotes: Repository<QuoteEntity>,
     private readonly config: ConfigService<EnvTypes, true>,
+    private readonly courses: CourseService,
+    private readonly orgSettings: OrgSettingsService,
   ) {}
 
   async onApplicationBootstrap() {
     await this.ensureAvatarColumn();
     await this.ensureDefaultShippingColumn();
-    if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
     try {
       await this.seedRoles();
+      await this.courses.seedDefaults(trackAmountNgn());
+      await this.orgSettings.ensureDefaults();
+    } catch (err) {
+      this.logger.error(
+        `Core 3.0 seed failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
+    try {
       await this.seedUsers();
       await this.seedCatalog();
       await this.seedOrders();
@@ -390,6 +408,16 @@ export class SeedService implements OnApplicationBootstrap {
       ...ADMIN_GRANTS,
       { action: Action.MANAGE, resource: Resource.ALL },
     ]);
+    await this.ensureRole(
+      'compliance_viewer',
+      'Compliance Viewer',
+      COMPLIANCE_VIEWER_GRANTS,
+    );
+    await this.ensureRole(
+      'compliance_manager',
+      'Compliance Manager',
+      COMPLIANCE_MANAGER_GRANTS,
+    );
   }
 
   private async ensureRole(

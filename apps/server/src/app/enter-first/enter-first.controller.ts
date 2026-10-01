@@ -1,35 +1,58 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Action, Resource } from '@app/shared';
+import type { Request } from 'express';
+import { clientIpFromRequest } from '../../common/http/client-ip';
+import { PublicEndpointThrottlerGuard } from '../../common/http/public-throttler.guard';
+import { PiiAccessService } from '../auth/pii-access.service';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import type { JwtPayload } from '../auth/dto/auth.types';
 import { EnterFirstEnrollDto } from './dto/enroll.dto';
 import { EnterFirstService } from './enter-first.service';
 
 @ApiTags('Enter First')
 @Controller()
 export class EnterFirstController {
-  constructor(private readonly enterFirst: EnterFirstService) {}
+  constructor(
+    private readonly enterFirst: EnterFirstService,
+    private readonly pii: PiiAccessService,
+  ) {}
 
   @Public()
+  @UseGuards(PublicEndpointThrottlerGuard)
   @Post('enter-first/enrollments')
   @ApiOperation({
     operationId: 'createEnterFirstEnrollment',
     summary: 'Enroll + start Paystack',
     description:
-      'Public website enrollment. Creates a pending record, initializes Paystack when amount > 0, returns authorizationUrl.',
+      'Public website enrollment. Price is loaded from the course table (closed, full, and past-cutoff courses are rejected). Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
   })
-  enroll(@Body() body: EnterFirstEnrollDto) {
-    return this.enterFirst.enroll(body);
+  enroll(@Body() body: EnterFirstEnrollDto, @Req() req: Request) {
+    return this.enterFirst.enroll(body, {
+      ip: clientIpFromRequest(req),
+      userAgent: req.get('user-agent') ?? '',
+    });
   }
 
   @Public()
+  @UseGuards(PublicEndpointThrottlerGuard)
   @Get('enter-first/enrollments/by-reference/:reference/status')
   @ApiOperation({
     operationId: 'getEnterFirstPaymentStatus',
     summary: 'Enter First payment status',
     description:
-      'Public status check after Paystack redirect. Re-verifies pending payments with Paystack.',
+      'Public status check after Paystack redirect. Re-verifies pending payments with Paystack, including amount and currency.',
   })
   status(@Param('reference') reference: string) {
     return this.enterFirst.statusByReference(reference);
@@ -42,19 +65,22 @@ export class EnterFirstController {
     operationId: 'listEnterFirstEnrollments',
     summary: 'List Enter First enrollments',
     description:
-      'Website / Enter First payment enrollments for admin. Supports q, paymentStatus, page, limit.',
+      'Website / Enter First payment enrollments for admin. compliance_viewer responses mask PII.',
   })
-  list(
+  async list(
+    @CurrentUser() user: JwtPayload,
     @Query('q') q?: string,
     @Query('paymentStatus') paymentStatus?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    const maskPii = await this.pii.shouldMaskPii(user.sub);
     return this.enterFirst.list({
       q,
       paymentStatus,
       page: page !== undefined ? Number(page) : undefined,
       limit: limit !== undefined ? Number(limit) : undefined,
+      maskPii,
     });
   }
 
@@ -64,9 +90,11 @@ export class EnterFirstController {
   @ApiOperation({
     operationId: 'getEnterFirstEnrollment',
     summary: 'Get Enter First enrollment',
-    description: 'Full enrollment + form payload for admin detail drawer.',
+    description:
+      'Full enrollment + form payload. PII is masked for compliance_viewer.',
   })
-  get(@Param('id') id: string) {
-    return this.enterFirst.getById(id);
+  async get(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    const maskPii = await this.pii.shouldMaskPii(user.sub);
+    return this.enterFirst.getById(id, maskPii);
   }
 }
