@@ -35,25 +35,21 @@ export type EnterFirstFormPayload = {
 @Entity('enter_first_enrollment')
 @WithTimestamps()
 export class EnterFirstEnrollmentEntity extends DatabaseEntity {
-  @Column({
-    name: 'source',
-    type: 'varchar',
-    length: 32,
-    default: 'enter_first',
-  })
+  @Column({ name: 'source', type: 'varchar', default: 'enter_first' })
   source: 'enter_first';
 
-  @Column({ name: 'first_name', length: 80 })
+  /** Unbounded varchar. Matches rows created before length limits were added. */
+  @Column({ name: 'first_name', type: 'varchar' })
   firstName: string;
 
-  @Column({ name: 'last_name', length: 80 })
+  @Column({ name: 'last_name', type: 'varchar' })
   lastName: string;
 
   @Index()
-  @Column({ length: 254 })
+  @Column({ type: 'varchar' })
   email: string;
 
-  @Column({ type: 'varchar', length: 32, nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   phone?: string;
 
   /** Selected track slugs from the course catalogue */
@@ -64,35 +60,20 @@ export class EnterFirstEnrollmentEntity extends DatabaseEntity {
   @Column({ type: 'int', default: 0 })
   amount: number;
 
-  @Column({ name: 'currency', type: 'varchar', length: 8, default: 'NGN' })
+  @Column({ name: 'currency', type: 'varchar', default: 'NGN' })
   currency: string;
 
   @Column({ name: 'price_snapshot', type: 'jsonb', default: [] })
   priceSnapshot: EnterFirstPriceLine[];
 
-  @Column({
-    name: 'payment_status',
-    type: 'varchar',
-    length: 16,
-    default: 'pending',
-  })
+  @Column({ name: 'payment_status', type: 'varchar', default: 'pending' })
   paymentStatus: EnterFirstPaymentStatus;
 
   @Index({ unique: true, where: '"paystack_reference" IS NOT NULL' })
-  @Column({
-    name: 'paystack_reference',
-    type: 'varchar',
-    length: 80,
-    nullable: true,
-  })
+  @Column({ name: 'paystack_reference', type: 'varchar', nullable: true })
   paystackReference?: string;
 
-  @Column({
-    name: 'authorization_url',
-    type: 'varchar',
-    length: 2048,
-    nullable: true,
-  })
+  @Column({ name: 'authorization_url', type: 'varchar', nullable: true })
   authorizationUrl?: string;
 
   @Column({

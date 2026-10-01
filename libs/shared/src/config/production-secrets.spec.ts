@@ -8,6 +8,7 @@ function env(overrides: Partial<RawEnv> = {}): RawEnv {
     FRONTEND_URL: 'https://shop.example',
     WEBSITE_URL: 'https://aurora.example',
     DATABASE_URL: 'postgres://localhost/db',
+    DB_SYNCHRONIZE: 'false',
     REDIS_URL: 'redis://localhost:6379',
     JWT_SECRET_KEY: 'real-jwt-secret',
     JWT_SALT_ROUNDS: 10,

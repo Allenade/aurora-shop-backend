@@ -14,6 +14,20 @@ jobs:
   check:
     name: Lint, Typecheck, Build & Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aurora
+          POSTGRES_PASSWORD: aurora
+          POSTGRES_DB: aurora_schema_boot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aurora -d aurora_schema_boot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,3 +55,5 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+        env:
+          SCHEMA_BOOT_DATABASE_URL: postgres://aurora:aurora@localhost:5432/aurora_schema_boot
