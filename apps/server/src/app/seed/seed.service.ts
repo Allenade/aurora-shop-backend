@@ -17,6 +17,7 @@ import {
   PROCUREMENT_GRANTS,
 } from '../auth/auth.module';
 import { CourseService } from '../course/course.service';
+import { EmailService } from '../email/email.service';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
 import { ProductEntity } from '../catalog/entities/product.entity';
 import {
@@ -338,6 +339,7 @@ export class SeedService implements OnApplicationBootstrap {
     private readonly config: ConfigService<EnvTypes, true>,
     private readonly courses: CourseService,
     private readonly orgSettings: OrgSettingsService,
+    private readonly emails: EmailService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -347,6 +349,7 @@ export class SeedService implements OnApplicationBootstrap {
       await this.seedRoles();
       await this.courses.seedDefaults();
       await this.orgSettings.ensureDefaults();
+      await this.emails.ensureStarterTemplate();
     } catch (err) {
       this.logger.error(
         `Core 3.0 seed failed: ${err instanceof Error ? err.message : String(err)}`,
