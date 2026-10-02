@@ -77,7 +77,9 @@ const envSchema = z.object({
     .default('info'),
   LOG_REQUESTS: z.coerce.boolean().default(true),
 
-  SEED_ADMIN_EMAIL: z.string().default(''),
+  SEED_ADMIN_EMAIL: z.string().default('admin@regaliaelectrical.ng'),
+  SEED_BUYER_EMAIL: z.string().default('bayonuga@example.com'),
+  SEED_PASSWORD: z.string().default('Aurora!2026'),
   SEED_ADMIN_PASSWORD: z.string().default(''),
 });
 
@@ -270,7 +272,9 @@ export function config() {
       publicBaseUrl: env.R2_PUBLIC_BASE_URL.replace(/\/+$/, ''),
     },
     seed: {
-      adminEmail: env.SEED_ADMIN_EMAIL.trim().toLowerCase(),
+      adminEmail: env.SEED_ADMIN_EMAIL,
+      buyerEmail: env.SEED_BUYER_EMAIL,
+      password: env.SEED_PASSWORD,
       adminPassword: env.SEED_ADMIN_PASSWORD,
     },
   };

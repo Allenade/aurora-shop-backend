@@ -48,7 +48,9 @@ function env(overrides: Partial<RawEnv> = {}): RawEnv {
     R2_PUBLIC_BASE_URL: 'https://example.com',
     LOG_LEVEL: 'info',
     LOG_REQUESTS: true,
-    SEED_ADMIN_EMAIL: '',
+    SEED_ADMIN_EMAIL: 'admin@example.com',
+    SEED_BUYER_EMAIL: 'buyer@example.com',
+    SEED_PASSWORD: 'secret',
     SEED_ADMIN_PASSWORD: '',
     ...overrides,
   };
