@@ -447,14 +447,22 @@ export class SeedService implements OnApplicationBootstrap {
   }
 
   /**
-   * Compliance dashboard login. Runs after the shop seed so an existing
-   * aurora-shop admin keeps the password from SEED_PASSWORD.
+   * Compliance dashboard login. Uses SUPER_ADMIN_EMAIL, not the shop admin.
+   * Runs in every environment, including production.
    */
   private async seedComplianceSuperAdmin() {
-    const email = this.config.get('seed.adminEmail', { infer: true });
-    const password = this.config.get('seed.adminPassword', { infer: true });
-    if (!email || !password) return;
-    const existing = await this.users.findOne({ where: { email } });
+    const email = this.config
+      .get('seed.superAdminEmail', { infer: true })
+      .trim()
+      .toLowerCase();
+    const password = this.config.get('seed.superAdminPassword', {
+      infer: true,
+    });
+    if (!email || !password.trim()) return;
+    const existing = await this.users
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :email', { email })
+      .getOne();
     if (existing) {
       this.logger.log('Super admin already exists; password left unchanged.');
       return;

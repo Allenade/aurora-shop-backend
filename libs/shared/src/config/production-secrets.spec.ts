@@ -51,7 +51,8 @@ function env(overrides: Partial<RawEnv> = {}): RawEnv {
     SEED_ADMIN_EMAIL: 'admin@example.com',
     SEED_BUYER_EMAIL: 'buyer@example.com',
     SEED_PASSWORD: 'secret',
-    SEED_ADMIN_PASSWORD: '',
+    SUPER_ADMIN_EMAIL: '',
+    SUPER_ADMIN_PASSWORD: '',
     ...overrides,
   };
 }
