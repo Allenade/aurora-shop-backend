@@ -37,6 +37,7 @@ import {
   PreviewAudienceDto,
   SendEmailDto,
   TestSendDto,
+  UpdateTemplateDto,
   UpsertTemplateDto,
 } from './dto/email.dto';
 import { EmailAssetService } from './email-asset.service';
@@ -84,7 +85,7 @@ export class EmailController {
     operationId: 'updateEmailTemplate',
     summary: 'Update email template',
   })
-  updateTemplate(@Param('id') id: string, @Body() body: UpsertTemplateDto) {
+  updateTemplate(@Param('id') id: string, @Body() body: UpdateTemplateDto) {
     return this.emails.updateTemplate(id, body);
   }
 

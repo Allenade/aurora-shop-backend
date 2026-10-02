@@ -8,7 +8,7 @@ export type JwtPayload = {
   exp?: number;
 };
 
-export type SessionRole = { id: string; name: string };
+export type SessionRole = { id: string; name: string; slug: string };
 export type SessionPermission = { action: string; resource: string };
 export type SessionRule = {
   action: string | string[];

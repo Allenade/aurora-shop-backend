@@ -16,7 +16,6 @@ import {
   COMPLIANCE_VIEWER_GRANTS,
   PROCUREMENT_GRANTS,
 } from '../auth/auth.module';
-import { CourseService } from '../course/course.service';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
 import { ProductEntity } from '../catalog/entities/product.entity';
 import {
@@ -336,7 +335,6 @@ export class SeedService implements OnApplicationBootstrap {
     @InjectRepository(QuoteEntity)
     private readonly quotes: Repository<QuoteEntity>,
     private readonly config: ConfigService<EnvTypes, true>,
-    private readonly courses: CourseService,
     private readonly orgSettings: OrgSettingsService,
   ) {}
 
@@ -345,24 +343,31 @@ export class SeedService implements OnApplicationBootstrap {
     await this.ensureDefaultShippingColumn();
     try {
       await this.seedRoles();
-      await this.courses.seedDefaults();
       await this.orgSettings.ensureDefaults();
     } catch (err) {
       this.logger.error(
         `Core 3.0 seed failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    if (this.config.get('nodeEnv', { infer: true }) === 'production') return;
+    if (this.config.get('nodeEnv', { infer: true }) !== 'production') {
+      try {
+        await this.seedUsers();
+        await this.seedCatalog();
+        await this.seedOrders();
+        await this.seedQuotes();
+      } catch (err) {
+        this.logger.warn(
+          `Dev seed skipped after error (server still starts): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
     try {
-      await this.seedUsers();
-      await this.seedCatalog();
-      await this.seedOrders();
-      await this.seedQuotes();
+      await this.seedComplianceSuperAdmin();
     } catch (err) {
-      this.logger.warn(
-        `Dev seed skipped after error (server still starts): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+      this.logger.error(
+        `Compliance admin seed failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -439,6 +444,53 @@ export class SeedService implements OnApplicationBootstrap {
       );
     }
     return role;
+  }
+
+  /**
+   * Compliance dashboard login. Uses SUPER_ADMIN_EMAIL, not the shop admin.
+   * Runs in every environment, including production.
+   */
+  private async seedComplianceSuperAdmin() {
+    const email = this.config
+      .get('seed.superAdminEmail', { infer: true })
+      .trim()
+      .toLowerCase();
+    const password = this.config.get('seed.superAdminPassword', {
+      infer: true,
+    });
+    if (!email || !password.trim()) return;
+    const existing = await this.users
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :email', { email })
+      .getOne();
+    if (existing) {
+      this.logger.log('Super admin already exists; password left unchanged.');
+      return;
+    }
+    const role = await this.roles.findOne({ where: { slug: 'super_admin' } });
+    if (!role) {
+      this.logger.error('super_admin role is missing; admin was not created.');
+      return;
+    }
+    const passwordHash = await bcrypt.hash(
+      password,
+      this.config.get('auth.saltRounds', { infer: true }),
+    );
+    const user = await this.users.save(
+      this.users.create({
+        email,
+        firstName: 'Super',
+        lastName: 'Admin',
+        type: UserType.ADMIN,
+        status: UserStatus.ACTIVE,
+        emailVerified: true,
+        passwordHash,
+      }),
+    );
+    await this.assignments.save(
+      this.assignments.create({ userId: user.id, roleId: role.id }),
+    );
+    this.logger.log('Compliance super admin created.');
   }
 
   private async seedUsers() {

@@ -5,6 +5,7 @@ import { shouldSynchronizeSchema, type EnvTypes } from '../config/env.config';
 import { Core30Compliance1735689600000 } from './migrations/1735689600000-Core30Compliance';
 import { CoursePriceNullable1735689700000 } from './migrations/1735689700000-CoursePriceNullable';
 import { EnrollmentColumnAlign1735689800000 } from './migrations/1735689800000-EnrollmentColumnAlign';
+import { RemoveSeededRows1735689900000 } from './migrations/1735689900000-RemoveSeededRows';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { EnrollmentColumnAlign1735689800000 } from './migrations/1735689800000-E
             Core30Compliance1735689600000,
             CoursePriceNullable1735689700000,
             EnrollmentColumnAlign1735689800000,
+            RemoveSeededRows1735689900000,
           ],
           migrationsRun: true,
           logging: false,
