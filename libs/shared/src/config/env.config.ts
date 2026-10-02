@@ -12,6 +12,11 @@ const envSchema = z.object({
   DATABASE_URL: z
     .string()
     .default('postgres://aurora:aurora@localhost:5432/aurora_shop'),
+  /**
+   * Opt in to TypeORM synchronize. Ignored unless NODE_ENV=development and
+   * DATABASE_URL is a local host. Staging and production always use migrations.
+   */
+  DB_SYNCHRONIZE: z.string().optional().default('false'),
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   JWT_SECRET_KEY: z.string().default('aurora-dev-jwt-secret-change-me'),
@@ -75,6 +80,8 @@ const envSchema = z.object({
   SEED_ADMIN_EMAIL: z.string().default('admin@regaliaelectrical.ng'),
   SEED_BUYER_EMAIL: z.string().default('bayonuga@example.com'),
   SEED_PASSWORD: z.string().default('Aurora!2026'),
+  SUPER_ADMIN_EMAIL: z.string().default(''),
+  SUPER_ADMIN_PASSWORD: z.string().default(''),
 });
 
 export type RawEnv = z.infer<typeof envSchema>;
@@ -97,6 +104,43 @@ export function parseTrustProxy(raw: string | undefined): TrustProxy {
   const hops = Number(value);
   if (!Number.isInteger(hops) || hops < 0) return false;
   return hops === 0 ? false : hops;
+}
+
+const LOCAL_DATABASE_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+  'postgres',
+]);
+
+/** True only for an explicit true/1/yes/on. Empty and "false" stay off. */
+export function parseDbSynchronize(raw: string | undefined): boolean {
+  if (raw == null || raw.trim() === '') return false;
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+}
+
+export function isLocalDatabaseUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return LOCAL_DATABASE_HOSTS.has(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Schema sync is off unless this process is local development and
+ * DB_SYNCHRONIZE is explicitly enabled. A remote staging or production
+ * database never synchronizes, even when NODE_ENV is development.
+ */
+export function shouldSynchronizeSchema(input: {
+  nodeEnv: string;
+  databaseUrl: string;
+  dbSynchronize: string | undefined;
+}): boolean {
+  if (input.nodeEnv !== 'development') return false;
+  if (!parseDbSynchronize(input.dbSynchronize)) return false;
+  return isLocalDatabaseUrl(input.databaseUrl);
 }
 
 export function parseRateLimitEnabled(raw: string | undefined): boolean {
@@ -158,7 +202,10 @@ export function config() {
           .filter(Boolean)[0] ||
         'http://localhost:3000',
     },
-    database: { url: env.DATABASE_URL },
+    database: {
+      url: env.DATABASE_URL,
+      synchronize: env.DB_SYNCHRONIZE,
+    },
     redis: { url: env.REDIS_URL },
     auth: {
       jwtSecret: env.JWT_SECRET_KEY,
@@ -229,6 +276,8 @@ export function config() {
       adminEmail: env.SEED_ADMIN_EMAIL,
       buyerEmail: env.SEED_BUYER_EMAIL,
       password: env.SEED_PASSWORD,
+      superAdminEmail: env.SUPER_ADMIN_EMAIL,
+      superAdminPassword: env.SUPER_ADMIN_PASSWORD,
     },
   };
 }

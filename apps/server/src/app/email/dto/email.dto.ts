@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
@@ -108,6 +108,9 @@ export class UpsertTemplateDto {
   @ApiProperty({ enum: ['transactional', 'marketing'] })
   kind: EmailKind;
 }
+
+/** PATCH may send any subset. The service does not rename the slug. */
+export class UpdateTemplateDto extends PartialType(UpsertTemplateDto) {}
 
 export class PreviewAudienceDto {
   @ValidateNested()

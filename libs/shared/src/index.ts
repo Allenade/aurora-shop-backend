@@ -1,8 +1,10 @@
 export {
   config,
+  parseDbSynchronize,
   parseRateLimitEnabled,
   parseTrustProxy,
   productionConfigErrors,
+  shouldSynchronizeSchema,
   validateConfig,
 } from './config/env.config';
 export type { EnvTypes, RawEnv, TrustProxy } from './config/env.config';

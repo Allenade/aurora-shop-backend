@@ -8,6 +8,7 @@ function env(overrides: Partial<RawEnv> = {}): RawEnv {
     FRONTEND_URL: 'https://shop.example',
     WEBSITE_URL: 'https://aurora.example',
     DATABASE_URL: 'postgres://localhost/db',
+    DB_SYNCHRONIZE: 'false',
     REDIS_URL: 'redis://localhost:6379',
     JWT_SECRET_KEY: 'real-jwt-secret',
     JWT_SALT_ROUNDS: 10,
@@ -50,6 +51,8 @@ function env(overrides: Partial<RawEnv> = {}): RawEnv {
     SEED_ADMIN_EMAIL: 'admin@example.com',
     SEED_BUYER_EMAIL: 'buyer@example.com',
     SEED_PASSWORD: 'secret',
+    SUPER_ADMIN_EMAIL: '',
+    SUPER_ADMIN_PASSWORD: '',
     ...overrides,
   };
 }

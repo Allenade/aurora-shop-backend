@@ -32,6 +32,8 @@ describe('compliance roles', () => {
     expect(allows(grants, Action.CREATE, Resource.REFUND)).toBe(true);
     expect(allows(grants, Action.UPDATE, Resource.REFUND)).toBe(true);
     expect(allows(grants, Action.CREATE, Resource.EMAIL)).toBe(true);
+    expect(allows(grants, Action.UPDATE, Resource.EMAIL)).toBe(true);
+    expect(allows(grants, Action.DELETE, Resource.EMAIL)).toBe(false);
     expect(allows(grants, Action.CREATE, Resource.COMPLIANCE)).toBe(true);
     expect(allows(grants, Action.UPDATE, Resource.COURSE)).toBe(false);
     expect(allows(grants, Action.MANAGE, Resource.SETTINGS)).toBe(false);
