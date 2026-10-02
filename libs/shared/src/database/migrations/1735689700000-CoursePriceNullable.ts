@@ -2,8 +2,10 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
  * Prices are set only from the compliance dashboard.
- * Drops NOT NULL / default on course.price and unpublishes the eight
- * seeded tracks unless an admin has already recorded a price change.
+ * Drops NOT NULL / default on course.price. Does not insert courses.
+ * Databases that already have the eight draft tracks are unpublished here
+ * unless an admin recorded a price change. A later migration deletes those
+ * untouched drafts.
  */
 export class CoursePriceNullable1735689700000 implements MigrationInterface {
   name = 'CoursePriceNullable1735689700000';
@@ -32,21 +34,6 @@ export class CoursePriceNullable1735689700000 implements MigrationInterface {
           AND h."changed_by" IS NOT NULL
           AND h."deleted_at" IS NULL
       )
-    `);
-    await queryRunner.query(`
-      INSERT INTO "course" (
-        "slug", "name", "description", "price", "currency", "is_free", "status", "sort_order"
-      )
-      VALUES
-        ('iot', 'Internet of Things', 'Connected devices, sensors, and embedded networking.', NULL, 'NGN', false, 'draft', 0),
-        ('mobile', 'Mobile Development', 'Mobile application engineering.', NULL, 'NGN', false, 'draft', 1),
-        ('ai', 'Artificial Intelligence', 'Applied machine learning and AI systems.', NULL, 'NGN', false, 'draft', 2),
-        ('blockchain', 'Blockchain', 'Distributed ledgers and smart contracts.', NULL, 'NGN', false, 'draft', 3),
-        ('arm', 'ARM Embedded Systems', 'ARM architecture and embedded firmware.', NULL, 'NGN', false, 'draft', 4),
-        ('vision', 'Computer Vision', 'Image understanding and vision systems.', NULL, 'NGN', false, 'draft', 5),
-        ('programming', 'Programming', 'Software engineering fundamentals.', NULL, 'NGN', false, 'draft', 6),
-        ('aerial', 'Aerial Robotics', 'Drones and aerial robotic systems.', NULL, 'NGN', false, 'draft', 7)
-      ON CONFLICT ("slug") DO NOTHING
     `);
   }
 

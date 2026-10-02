@@ -14,7 +14,6 @@ import {
   quoteCourses,
   type PricedCourse,
 } from './course-pricing';
-import { CORE30_TRACKS } from './course.tracks';
 import type {
   ReorderCoursesDto,
   UpdateCourseDto,
@@ -288,29 +287,6 @@ export class CourseService {
         track: JSON.stringify([slug]),
       })
       .getCount();
-  }
-
-  /** Insert the 8 Core 3.0 tracks as unpublished drafts with no price. Does not overwrite. */
-  async seedDefaults() {
-    for (const track of CORE30_TRACKS) {
-      const existing = await this.courses.findOne({
-        where: { slug: track.slug },
-        withDeleted: true,
-      });
-      if (existing) continue;
-      await this.courses.save(
-        this.courses.create({
-          slug: track.slug,
-          name: track.name,
-          description: track.description,
-          price: null,
-          currency: 'NGN',
-          isFree: false,
-          status: 'draft',
-          sortOrder: track.sortOrder,
-        }),
-      );
-    }
   }
 
   private async findOrThrow(id: string) {

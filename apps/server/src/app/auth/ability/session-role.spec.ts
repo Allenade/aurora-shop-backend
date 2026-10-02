@@ -1,3 +1,4 @@
+import { UserType } from '@app/shared/user/user.enums';
 import { buildSessionUser } from './session-user';
 
 describe('session role slug', () => {
@@ -7,7 +8,7 @@ describe('session role slug', () => {
       email: 'viewer@aurora.local',
       firstName: 'Viewer',
       lastName: 'Account',
-      type: 'admin',
+      type: UserType.ADMIN,
       avatarUrl: null,
       roleAssignments: [
         {

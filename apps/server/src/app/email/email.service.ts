@@ -16,7 +16,6 @@ import { Brackets, In, LessThanOrEqual, Repository } from 'typeorm';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
 import { CourseEntity } from '../course/entities/course.entity';
 import { renderEmail } from './email-render';
-import { STARTER_EMAIL_TEMPLATE } from './email-starter-template';
 import {
   batchIdempotencyKey,
   chunkIds,
@@ -108,17 +107,6 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
   async listTemplates() {
     const rows = await this.templates.find({ order: { name: 'ASC' } });
     return rows.map(toTemplate);
-  }
-
-  async ensureStarterTemplate() {
-    const existing = await this.templates.findOne({
-      where: { slug: STARTER_EMAIL_TEMPLATE.slug },
-      withDeleted: true,
-    });
-    if (existing) return;
-    await this.templates.save(
-      this.templates.create({ ...STARTER_EMAIL_TEMPLATE }),
-    );
   }
 
   async createTemplate(dto: UpsertTemplateDto, userId?: string) {
