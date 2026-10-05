@@ -7,7 +7,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLogType } from '@app/shared';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { splitCourseTokens } from '../enter-first/enrollment-filters';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
+import { CORE_30_PROGRAM } from '../program/core30';
+import { coursesForProgram } from './course-catalogue';
 import {
   isEnrollable,
   publishBlockReason,
@@ -34,25 +37,22 @@ export class CourseService {
     private readonly audit: AuditLogService,
   ) {}
 
-  async listPublic() {
-    const rows = await this.courses.find({
-      where: { status: 'open' },
-      order: { sortOrder: 'ASC', name: 'ASC' },
-    });
-    const enrollable = rows.filter((row) =>
-      isEnrollable({
-        status: row.status,
-        isFree: row.isFree,
-        price: row.price,
-      }),
+  async listPublic(program = CORE_30_PROGRAM) {
+    const rows = await this.coursesInProgram(program);
+    const enrollable = rows.filter(
+      (row) =>
+        row.status === 'open' &&
+        isEnrollable({
+          status: row.status,
+          isFree: row.isFree,
+          price: row.price,
+        }),
     );
     return Promise.all(enrollable.map((row) => this.toPublicDto(row)));
   }
 
-  async listAdmin() {
-    const rows = await this.courses.find({
-      order: { sortOrder: 'ASC', name: 'ASC' },
-    });
+  async listAdmin(program = CORE_30_PROGRAM) {
+    const rows = await this.coursesInProgram(program);
     return Promise.all(rows.map((row) => this.toAdminDto(row)));
   }
 
@@ -91,6 +91,7 @@ export class CourseService {
     const row = await this.courses.save(
       this.courses.create({
         slug,
+        program: CORE_30_PROGRAM,
         name: dto.name.trim(),
         description: dto.description?.trim() ?? '',
         price,
@@ -192,7 +193,7 @@ export class CourseService {
 
   async remove(id: string, userId?: string) {
     const row = await this.findOrThrow(id);
-    const count = await this.enrollmentCount(row.slug);
+    const count = await this.enrollmentCount(row.slug, row.program);
     if (row.status !== 'draft' || count > 0) {
       throw new BadRequestException(
         'Only draft courses with no enrollments can be deleted',
@@ -211,7 +212,7 @@ export class CourseService {
 
   async archive(id: string, userId?: string) {
     const row = await this.findOrThrow(id);
-    const count = await this.enrollmentCount(row.slug);
+    const count = await this.enrollmentCount(row.slug, row.program);
     if (count < 1) {
       throw new BadRequestException(
         'Archive is only available once the course has enrollments',
@@ -248,7 +249,7 @@ export class CourseService {
   }
 
   async quote(slugs: string[], now = new Date()) {
-    const rows = await this.courses.find();
+    const rows = await this.coursesInProgram(CORE_30_PROGRAM);
     const priced: PricedCourse[] = [];
     for (const row of rows) {
       priced.push({
@@ -259,7 +260,7 @@ export class CourseService {
         isFree: row.isFree,
         status: row.status,
         seatCap: row.seatCap ?? null,
-        seatsTaken: await this.seatsHeld(row.slug),
+        seatsTaken: await this.seatsHeld(row.slug, row.program),
         enrollmentCutoff: row.enrollmentCutoff ?? null,
       });
     }
@@ -268,25 +269,66 @@ export class CourseService {
     return result;
   }
 
-  async seatsHeld(slug: string) {
+  /**
+   * Turns filter tokens into track slugs that exist in the program.
+   * Slugs are kept so historical enrollments still match after a course row
+   * is removed. Unknown ids with no remaining slug match nothing.
+   */
+  async resolveFilterSlugs(tokens: string[], program: string) {
+    const { ids, slugs } = splitCourseTokens(tokens);
+    if (!ids.length && !slugs.length) {
+      return { slugs: [] as string[], forceEmpty: false };
+    }
+    const resolved = new Set(slugs);
+    if (ids.length) {
+      const rows = await this.courses
+        .createQueryBuilder('c')
+        .where('c.id IN (:...ids)', { ids })
+        .andWhere('LOWER(c.program) = LOWER(:program)', { program })
+        .getMany();
+      const found = new Set(rows.map((row) => row.id.toLowerCase()));
+      for (const row of rows) resolved.add(row.slug);
+      if (
+        ids.some((id) => !found.has(id.toLowerCase())) &&
+        resolved.size === 0
+      ) {
+        return { slugs: [] as string[], forceEmpty: true };
+      }
+    }
+    return { slugs: [...resolved], forceEmpty: false };
+  }
+
+  async seatsHeld(slug: string, program = CORE_30_PROGRAM) {
     return this.enrollments
       .createQueryBuilder('e')
       .where('e.payment_status IN (:...statuses)', {
         statuses: ['pending', 'success'],
       })
+      .andWhere('LOWER(e.program) = LOWER(:program)', { program })
       .andWhere('e.tracks @> CAST(:track AS jsonb)', {
         track: JSON.stringify([slug]),
       })
       .getCount();
   }
 
-  async enrollmentCount(slug: string) {
+  async enrollmentCount(slug: string, program = CORE_30_PROGRAM) {
     return this.enrollments
       .createQueryBuilder('e')
-      .where('e.tracks @> CAST(:track AS jsonb)', {
+      .where('LOWER(e.program) = LOWER(:program)', { program })
+      .andWhere('e.tracks @> CAST(:track AS jsonb)', {
         track: JSON.stringify([slug]),
       })
       .getCount();
+  }
+
+  private async coursesInProgram(program: string) {
+    const rows = await this.courses
+      .createQueryBuilder('c')
+      .where('LOWER(c.program) = LOWER(:program)', { program })
+      .orderBy('c.sortOrder', 'ASC')
+      .addOrderBy('c.name', 'ASC')
+      .getMany();
+    return coursesForProgram(rows, program);
   }
 
   private async findOrThrow(id: string) {
@@ -296,9 +338,10 @@ export class CourseService {
   }
 
   private async toPublicDto(row: CourseEntity) {
-    const seatsTaken = await this.seatsHeld(row.slug);
+    const seatsTaken = await this.seatsHeld(row.slug, row.program);
     return {
       id: row.id,
+      program: row.program,
       slug: row.slug,
       name: row.name,
       description: row.description,
@@ -321,7 +364,7 @@ export class CourseService {
   private async toAdminDto(row: CourseEntity) {
     return {
       ...(await this.toPublicDto(row)),
-      enrollmentCount: await this.enrollmentCount(row.slug),
+      enrollmentCount: await this.enrollmentCount(row.slug, row.program),
       createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
       updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
     };

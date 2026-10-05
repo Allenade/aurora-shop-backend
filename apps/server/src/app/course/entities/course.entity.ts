@@ -1,5 +1,6 @@
 import { DatabaseEntity, WithTimestamps } from '@app/shared';
 import { Column, Entity, Index, OneToMany } from 'typeorm';
+import { CORE_30_PROGRAM } from '../../program/core30';
 import type { CourseStatus } from '../course-pricing';
 import { CoursePriceHistoryEntity } from './course-price-history.entity';
 
@@ -9,6 +10,11 @@ export class CourseEntity extends DatabaseEntity {
   @Index({ unique: true })
   @Column({ length: 40 })
   slug: string;
+
+  /** Program folder this track belongs to. Compliance-created courses are Core 3.0. */
+  @Index('IDX_course_program')
+  @Column({ type: 'varchar', length: 80, default: CORE_30_PROGRAM })
+  program: string;
 
   @Column({ length: 160 })
   name: string;

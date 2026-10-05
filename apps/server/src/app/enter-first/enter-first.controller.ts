@@ -19,6 +19,11 @@ import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/dto/auth.types';
 import { EnterFirstEnrollDto } from './dto/enroll.dto';
+import {
+  ENROLLMENT_FILTER_DOCS,
+  type EnrollmentFilterQuery,
+} from './enrollment-filters';
+import { enrollmentQuery } from './enrollment-query';
 import { EnterFirstService } from './enter-first.service';
 
 @ApiTags('Enter First')
@@ -36,7 +41,7 @@ export class EnterFirstController {
     operationId: 'createEnterFirstEnrollment',
     summary: 'Enroll + start Paystack',
     description:
-      'Public website enrollment. Price is loaded from the course table. A course is accepted only when it is published (status open) and has a price set, or is free. Draft, closed, archived, full, past-cutoff, and unpaid courses are rejected. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
+      'Public website enrollment. The enrollment is stored under program Core 3.0 with the selected course tracks. Price is loaded from the course table. A course is accepted only when it is published (status open), belongs to Core 3.0, and has a price set, or is free. Draft, closed, archived, full, past-cutoff, and unpaid courses are rejected. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
   })
   enroll(@Body() body: EnterFirstEnrollDto, @Req() req: Request) {
     return this.enterFirst.enroll(body, {
@@ -64,24 +69,14 @@ export class EnterFirstController {
   @ApiOperation({
     operationId: 'listEnterFirstEnrollments',
     summary: 'List Enter First enrollments',
-    description:
-      'Website / Enter First payment enrollments for admin. compliance_viewer responses mask PII.',
+    description: `Website / Enter First payment enrollments for admin. Defaults to program Core 3.0. compliance_viewer responses mask PII. ${ENROLLMENT_FILTER_DOCS}`,
   })
   async list(
     @CurrentUser() user: JwtPayload,
-    @Query('q') q?: string,
-    @Query('paymentStatus') paymentStatus?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query() query: EnrollmentFilterQuery,
   ) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
-    return this.enterFirst.list({
-      q,
-      paymentStatus,
-      page: page !== undefined ? Number(page) : undefined,
-      limit: limit !== undefined ? Number(limit) : undefined,
-      maskPii,
-    });
+    return this.enterFirst.list(enrollmentQuery(query), maskPii);
   }
 
   @ApiBearerAuth()

@@ -9,7 +9,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
-import { ILike, LessThan, MoreThan, Repository } from 'typeorm';
+import { LessThan, MoreThan, Repository } from 'typeorm';
 import { CourseService } from '../course/course.service';
 import { MailService } from '../mail/mail.service';
 import {
@@ -19,12 +19,18 @@ import {
 } from '../payment-gateway/_contract/payment.types';
 import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { reconcileProviderStatus } from '../payment-gateway/paystack/reconcile-charge';
+import { CORE_30_PROGRAM } from '../program/core30';
 import { isUnder18 } from './age';
 import type { EnterFirstEnrollDto } from './dto/enroll.dto';
+import { enrollmentsToCsv } from './enrollment-csv';
+import {
+  applyEnrollmentFilters,
+  type EnrollmentFilterInput,
+  type ParsedEnrollmentFilters,
+} from './enrollment-filters';
 import {
   EnterFirstEnrollmentEntity,
   type EnterFirstFormPayload,
-  type EnterFirstPaymentStatus,
 } from './entities/enter-first-enrollment.entity';
 import { maskEmail, maskName, maskPhone } from './pii';
 
@@ -95,6 +101,7 @@ export class EnterFirstService {
     const row = await this.enrollments.save(
       this.enrollments.create({
         source: 'enter_first',
+        program: CORE_30_PROGRAM,
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -161,6 +168,7 @@ export class EnterFirstService {
       channels,
       metadata: {
         product: 'enter_first',
+        program: CORE_30_PROGRAM,
         enrollmentId: row.id,
         tracks,
       },
@@ -275,55 +283,34 @@ export class EnterFirstService {
     }
   }
 
-  async list(opts: {
-    q?: string;
-    paymentStatus?: string;
-    page?: number;
-    limit?: number;
-    maskPii?: boolean;
-  }) {
-    const page = Math.max(1, opts.page ?? 1);
-    const limit = Math.min(100, Math.max(1, opts.limit ?? 10));
-    const where: Record<string, unknown>[] = [];
-
-    const statusFilter = opts.paymentStatus
-      ?.split(',')
-      .map((s) => s.trim())
-      .filter(Boolean) as EnterFirstPaymentStatus[] | undefined;
-
-    if (opts.q?.trim()) {
-      const q = `%${opts.q.trim()}%`;
-      const base = statusFilter?.length
-        ? statusFilter.map((paymentStatus) => ({ paymentStatus }))
-        : [{}];
-      for (const statusWhere of base) {
-        where.push(
-          { ...statusWhere, firstName: ILike(q) },
-          { ...statusWhere, lastName: ILike(q) },
-          { ...statusWhere, email: ILike(q) },
-          { ...statusWhere, paystackReference: ILike(q) },
-        );
-      }
-    } else if (statusFilter?.length) {
-      for (const paymentStatus of statusFilter) {
-        where.push({ paymentStatus });
-      }
-    }
-
-    const [items, total] = await this.enrollments.findAndCount({
-      where: where.length ? where : undefined,
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  async list(query: ParsedEnrollmentFilters, maskPii = false) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 10));
+    const filters = await this.scopedFilters(query);
+    const qb = this.enrollments.createQueryBuilder('e');
+    applyEnrollmentFilters(qb, filters);
+    const [items, total] = await qb
+      .orderBy('e.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
 
     return {
-      items: items.map((row) => this.toDto(row, opts.maskPii)),
+      program: filters.program,
+      items: items.map((row) => this.toDto(row, maskPii)),
       total,
       page,
       limit,
       pageCount: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  async exportCsv(query: ParsedEnrollmentFilters, maskPii = false) {
+    const filters = await this.scopedFilters(query);
+    const qb = this.enrollments.createQueryBuilder('e');
+    applyEnrollmentFilters(qb, filters);
+    const rows = await qb.orderBy('e.created_at', 'ASC').getMany();
+    return enrollmentsToCsv(rows, maskPii);
   }
 
   async getById(id: string, maskPii = false) {
@@ -420,6 +407,7 @@ export class EnterFirstService {
         email: row.email,
         firstName: row.firstName,
         lastName: row.lastName,
+        program: row.program || CORE_30_PROGRAM,
         tracks: row.tracks,
         amount: row.amount,
         currency: row.currency,
@@ -439,6 +427,24 @@ export class EnterFirstService {
     return `EF-${Date.now()}-${randomInt(100, 999)}`;
   }
 
+  private async scopedFilters(
+    query: ParsedEnrollmentFilters,
+  ): Promise<EnrollmentFilterInput> {
+    const resolved = await this.courses.resolveFilterSlugs(
+      query.courseTokens,
+      query.program,
+    );
+    return {
+      program: query.program,
+      q: query.q,
+      paymentStatuses: query.paymentStatuses,
+      trackSlugs: resolved.slugs,
+      forceEmpty: resolved.forceEmpty,
+      from: query.from,
+      to: query.to,
+    };
+  }
+
   private websiteOrigin() {
     const dedicated = this.config.get('website.url', { infer: true });
     if (dedicated) return dedicated.replace(/\/$/, '');
@@ -453,6 +459,7 @@ export class EnterFirstService {
       paid: row.paymentStatus === 'success',
       amount: row.amount,
       currency: row.currency,
+      program: row.program || CORE_30_PROGRAM,
       tracks: row.tracks,
       enrollmentId: row.id,
       amountMismatch: row.amountMismatch,
@@ -470,6 +477,7 @@ export class EnterFirstService {
       lastName: maskPii ? maskName(row.lastName) : row.lastName,
       email,
       phone,
+      program: row.program || CORE_30_PROGRAM,
       tracks: row.tracks,
       amount: row.amount,
       currency: row.currency,
