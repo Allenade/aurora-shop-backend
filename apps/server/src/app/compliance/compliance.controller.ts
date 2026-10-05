@@ -15,6 +15,11 @@ import { PiiAccessService } from '../auth/pii-access.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/dto/auth.types';
+import {
+  ENROLLMENT_LIST_QUERY_DOCS,
+  type EnrollmentListQuery,
+} from '../enter-first/enrollment-list-filters';
+import { enrollmentQuery } from '../enter-first/enrollment-list-query';
 import { ComplianceService } from './compliance.service';
 import { CreateDataRequestDto } from './dto/compliance.dto';
 
@@ -88,19 +93,23 @@ export class ComplianceController {
   @ApiOperation({
     operationId: 'exportComplianceCsv',
     summary: 'Export enrollments CSV',
+    description: `UTF-8 CSV with a BOM and CRLF rows for Excel. Same filters as the enrollment list, up to 20000 rows. PDF stays on the dashboard. ${ENROLLMENT_LIST_QUERY_DOCS}`,
   })
   async exportCsv(
     @CurrentUser() user: JwtPayload,
     @Res({ passthrough: true }) res: Response,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: EnrollmentListQuery,
   ) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
-    const csv = await this.compliance.exportCsv(from, to, maskPii);
+    const { csv, truncated } = await this.compliance.exportCsv(
+      enrollmentQuery(query),
+      maskPii,
+    );
     res.setHeader(
       'Content-Disposition',
       'attachment; filename="core30-enrollments.csv"',
     );
+    if (truncated) res.setHeader('X-Export-Truncated', 'true');
     return csv;
   }
 

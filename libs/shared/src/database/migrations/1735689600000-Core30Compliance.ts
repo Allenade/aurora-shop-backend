@@ -57,7 +57,8 @@ export class Core30Compliance1735689600000 implements MigrationInterface {
       BEGIN
         IF EXISTS (
           SELECT 1 FROM information_schema.tables
-          WHERE table_name = 'enter_first_enrollment'
+          WHERE table_schema = current_schema()
+            AND table_name = 'enter_first_enrollment'
         ) THEN
           ALTER TABLE "enter_first_enrollment" ADD COLUMN IF NOT EXISTS "price_snapshot" jsonb NOT NULL DEFAULT '[]';
           ALTER TABLE "enter_first_enrollment" ADD COLUMN IF NOT EXISTS "paystack_transaction_id" varchar(64);
@@ -90,7 +91,9 @@ export class Core30Compliance1735689600000 implements MigrationInterface {
       DO $$
       BEGIN
         IF EXISTS (
-          SELECT 1 FROM information_schema.tables WHERE table_name = 'audit_log'
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND table_name = 'audit_log'
         ) THEN
           ALTER TABLE "audit_log" ADD COLUMN IF NOT EXISTS "ip" varchar(64);
           ALTER TABLE "audit_log" ADD COLUMN IF NOT EXISTS "user_agent" varchar(512);

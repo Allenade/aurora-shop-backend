@@ -19,6 +19,11 @@ import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/dto/auth.types';
 import { EnterFirstEnrollDto } from './dto/enroll.dto';
+import {
+  ENROLLMENT_LIST_QUERY_DOCS,
+  type EnrollmentListQuery,
+} from './enrollment-list-filters';
+import { enrollmentQuery } from './enrollment-list-query';
 import { EnterFirstService } from './enter-first.service';
 
 @ApiTags('Enter First')
@@ -64,24 +69,14 @@ export class EnterFirstController {
   @ApiOperation({
     operationId: 'listEnterFirstEnrollments',
     summary: 'List Enter First enrollments',
-    description:
-      'Website / Enter First payment enrollments for admin. compliance_viewer responses mask PII.',
+    description: `Website / Enter First payment enrollments for admin. compliance_viewer responses mask PII. ${ENROLLMENT_LIST_QUERY_DOCS}`,
   })
   async list(
     @CurrentUser() user: JwtPayload,
-    @Query('q') q?: string,
-    @Query('paymentStatus') paymentStatus?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query() query: EnrollmentListQuery,
   ) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
-    return this.enterFirst.list({
-      q,
-      paymentStatus,
-      page: page !== undefined ? Number(page) : undefined,
-      limit: limit !== undefined ? Number(limit) : undefined,
-      maskPii,
-    });
+    return this.enterFirst.list(enrollmentQuery(query), maskPii);
   }
 
   @ApiBearerAuth()

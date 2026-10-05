@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AuditLogType } from '@app/shared';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
@@ -266,6 +266,12 @@ export class CourseService {
     const result = quoteCourses(slugs, priced, now);
     if (!result.ok) throw new BadRequestException(result.error);
     return result;
+  }
+
+  async findSlugsByIds(ids: string[]) {
+    if (!ids.length) return [];
+    const rows = await this.courses.find({ where: { id: In(ids) } });
+    return rows.map((row) => ({ id: row.id, slug: row.slug }));
   }
 
   async seatsHeld(slug: string) {
