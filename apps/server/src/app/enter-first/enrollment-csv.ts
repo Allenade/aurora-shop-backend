@@ -1,3 +1,4 @@
+import { CORE_30_PROGRAM } from '../program/core30';
 import { completedAge, dateOnly } from './age';
 import { maskEmail, maskName, maskPhone } from './pii';
 
@@ -8,6 +9,7 @@ export type EnrollmentCsvRow = {
   lastName: string;
   email: string;
   phone?: string | null;
+  program?: string | null;
   tracks: string[];
   amount: number;
   currency: string;
@@ -32,6 +34,7 @@ const HEADER = [
   'lastName',
   'email',
   'phone',
+  'program',
   'tracks',
   'amount',
   'currency',
@@ -66,6 +69,7 @@ export function enrollmentsToCsv(
         csv(maskPii ? maskName(row.lastName) : row.lastName),
         csv(maskPii ? maskEmail(row.email) : row.email),
         csv(maskPii ? maskPhone(row.phone) : row.phone),
+        csv(row.program?.trim() || CORE_30_PROGRAM),
         csv(row.tracks.join('|')),
         row.amount,
         row.currency,

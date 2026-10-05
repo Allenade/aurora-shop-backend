@@ -1,6 +1,7 @@
 import { DatabaseEntity, WithTimestamps } from '@app/shared';
 import { Column, Entity, Index } from 'typeorm';
 import type { ConfirmationSource } from '../../payment-gateway/_contract/payment.types';
+import { CORE_30_PROGRAM } from '../../program/core30';
 
 export type EnterFirstPaymentStatus =
   'pending' | 'success' | 'failed' | 'refunded';
@@ -37,6 +38,11 @@ export type EnterFirstFormPayload = {
 export class EnterFirstEnrollmentEntity extends DatabaseEntity {
   @Column({ name: 'source', type: 'varchar', default: 'enter_first' })
   source: 'enter_first';
+
+  /** Program folder. Enter First / Core 3.0 enrollments are stored as Core 3.0. */
+  @Index('IDX_enter_first_enrollment_program')
+  @Column({ type: 'varchar', length: 80, default: CORE_30_PROGRAM })
+  program: string;
 
   /** Unbounded varchar. Matches rows created before length limits were added. */
   @Column({ name: 'first_name', type: 'varchar' })

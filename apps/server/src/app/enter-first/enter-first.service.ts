@@ -19,6 +19,7 @@ import {
 } from '../payment-gateway/_contract/payment.types';
 import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { reconcileProviderStatus } from '../payment-gateway/paystack/reconcile-charge';
+import { CORE_30_PROGRAM } from '../program/core30';
 import { completedAge, dateOnly, isUnder18 } from './age';
 import type { EnterFirstEnrollDto } from './dto/enroll.dto';
 import { enrollmentsToCsv } from './enrollment-csv';
@@ -101,6 +102,7 @@ export class EnterFirstService {
     const row = await this.enrollments.save(
       this.enrollments.create({
         source: 'enter_first',
+        program: CORE_30_PROGRAM,
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -167,6 +169,7 @@ export class EnterFirstService {
       channels,
       metadata: {
         product: 'enter_first',
+        program: CORE_30_PROGRAM,
         enrollmentId: row.id,
         tracks,
       },
@@ -284,8 +287,9 @@ export class EnterFirstService {
   async list(query: ParsedEnrollmentListQuery, maskPii = false) {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 10));
+    const filters = await this.enrollmentFilters(query);
     const qb = this.enrollments.createQueryBuilder('e');
-    applyEnrollmentFilters(qb, await this.enrollmentFilters(query));
+    applyEnrollmentFilters(qb, filters);
     const [items, total] = await qb
       .orderBy('e.createdAt', 'DESC')
       .skip((page - 1) * limit)
@@ -293,6 +297,7 @@ export class EnterFirstService {
       .getManyAndCount();
 
     return {
+      program: filters.program,
       items: items.map((row) => this.toDto(row, maskPii)),
       total,
       page,
@@ -412,6 +417,7 @@ export class EnterFirstService {
         email: row.email,
         firstName: row.firstName,
         lastName: row.lastName,
+        program: row.program || CORE_30_PROGRAM,
         tracks: row.tracks,
         amount: row.amount,
         currency: row.currency,
@@ -437,8 +443,11 @@ export class EnterFirstService {
     let forceEmpty = query.forceEmpty;
     if (ids.length) {
       const rows = await this.courses.findSlugsByIds(ids);
-      const found = new Set(rows.map((row) => row.id.toLowerCase()));
-      for (const row of rows) resolved.add(row.slug);
+      const inProgram = rows.filter(
+        (row) => row.program.toLowerCase() === query.program.toLowerCase(),
+      );
+      const found = new Set(inProgram.map((row) => row.id.toLowerCase()));
+      for (const row of inProgram) resolved.add(row.slug);
       if (
         ids.some((id) => !found.has(id.toLowerCase())) &&
         resolved.size === 0
@@ -447,6 +456,7 @@ export class EnterFirstService {
       }
     }
     return {
+      program: query.program,
       q: query.q,
       paymentStatuses: query.paymentStatuses,
       trackSlugs: [...resolved],
@@ -478,6 +488,7 @@ export class EnterFirstService {
       paid: row.paymentStatus === 'success',
       amount: row.amount,
       currency: row.currency,
+      program: row.program || CORE_30_PROGRAM,
       tracks: row.tracks,
       enrollmentId: row.id,
       amountMismatch: row.amountMismatch,
@@ -495,6 +506,7 @@ export class EnterFirstService {
       lastName: maskPii ? maskName(row.lastName) : row.lastName,
       email,
       phone,
+      program: row.program || CORE_30_PROGRAM,
       tracks: row.tracks,
       amount: row.amount,
       currency: row.currency,

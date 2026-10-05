@@ -31,6 +31,7 @@ describe('enrollment list filters', () => {
       from: '2026-10-01',
       to: '2026-10-05',
     });
+    expect(parsed.program).toBe('Core 3.0');
     expect(parsed.paymentStatuses).toEqual(['success', 'pending']);
     expect(parsed.trackTokens).toEqual([
       'iot',
@@ -53,6 +54,7 @@ describe('enrollment list filters', () => {
       trackSlugs: ['iot', 'mobile'],
     });
     const sql = qb.calls.map((call) => call.sql).join('\n');
+    expect(sql).toContain('LOWER(e.program) = LOWER(:program)');
     expect(sql).toContain('e.payment_status IN (:...paymentStatuses)');
     expect(sql).toContain('e.first_name ILIKE :q');
     expect(sql).toContain('e.tracks @> CAST(:track0 AS jsonb)');
@@ -94,6 +96,16 @@ describe('enrollment list filters', () => {
     expect(sql).toContain('e.date_of_birth = :dateOfBirth');
     expect(sql).toContain('e.date_of_birth >= :dobFrom');
     expect(sql).toContain('e.paid_at >= :paidFrom');
+  });
+
+  it('defaults a blank program to Core 3.0 and keeps an explicit name', () => {
+    expect(parseEnrollmentListQuery({}).program).toBe('Core 3.0');
+    expect(parseEnrollmentListQuery({ program: '  ' }).program).toBe(
+      'Core 3.0',
+    );
+    expect(parseEnrollmentListQuery({ program: 'Later' }).program).toBe(
+      'Later',
+    );
   });
 
   it('rejects an inverted age range and a bad isMinor value', () => {
@@ -138,6 +150,8 @@ describe('enrollment csv', () => {
       now,
     );
     expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain('phone,program,tracks');
+    expect(csv).toContain('Core 3.0');
     expect(csv).toContain('\r\n');
     expect(csv).toContain(
       'dateOfBirth,age,ageConfirmed,guardianName,guardianEmail',

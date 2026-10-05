@@ -41,7 +41,7 @@ export class EnterFirstController {
     operationId: 'createEnterFirstEnrollment',
     summary: 'Enroll + start Paystack',
     description:
-      'Public website enrollment. Price is loaded from the course table. A course is accepted only when it is published (status open) and has a price set, or is free. Draft, closed, archived, full, past-cutoff, and unpaid courses are rejected. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
+      'Public website enrollment. The enrollment is stored under program Core 3.0 with the selected course tracks. Price is loaded from the course table. A course is accepted only when it is published (status open), belongs to Core 3.0, and has a price set, or is free. Draft, closed, archived, full, past-cutoff, and unpaid courses are rejected. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
   })
   enroll(@Body() body: EnterFirstEnrollDto, @Req() req: Request) {
     return this.enterFirst.enroll(body, {
@@ -69,7 +69,7 @@ export class EnterFirstController {
   @ApiOperation({
     operationId: 'listEnterFirstEnrollments',
     summary: 'List Enter First enrollments',
-    description: `Website / Enter First payment enrollments for admin. compliance_viewer responses mask PII. ${ENROLLMENT_LIST_QUERY_DOCS}`,
+    description: `Website / Enter First payment enrollments for admin. Defaults to program Core 3.0. compliance_viewer responses mask PII. ${ENROLLMENT_LIST_QUERY_DOCS}`,
   })
   async list(
     @CurrentUser() user: JwtPayload,

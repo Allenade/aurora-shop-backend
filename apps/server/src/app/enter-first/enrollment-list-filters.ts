@@ -1,3 +1,5 @@
+import { CORE_30_PROGRAM, resolveProgram } from '../program/core30';
+
 const PAYMENT_STATUSES = new Set(['pending', 'success', 'failed', 'refunded']);
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -5,9 +7,11 @@ const UUID_RE =
 export const ENROLLMENT_EXPORT_ROW_CAP = 20000;
 
 export const ENROLLMENT_LIST_QUERY_DOCS = [
+  'program defaults to Core 3.0. Pass another program name to use that folder.',
   'q matches first name, last name, email, or Paystack reference.',
   'paymentStatus is pending, success, failed, or refunded (comma-separated).',
-  'track, course, courseId, and courseSlug accept a course slug or id, comma-separated or repeated. A row matches when tracks contains any of them.',
+  'track, course, courseId, and courseSlug accept a course slug or id, comma-separated or repeated. A row matches when tracks contains any of them inside the selected program.',
+  'Course options for these filters are rows in the course table (GET /admin/courses). Nothing is added when that table is empty.',
   'isMinor is true, false, or unknown.',
   'dateOfBirth is an exact YYYY-MM-DD. dobFrom and dobTo bound date_of_birth.',
   'age is completed years. ageMin and ageMax bound the same calendar age from date_of_birth.',
@@ -27,6 +31,7 @@ export type RawQueryValue = string | string[] | undefined;
 export type EnrollmentListQuery = {
   q?: RawQueryValue;
   paymentStatus?: RawQueryValue;
+  program?: RawQueryValue;
   track?: RawQueryValue;
   course?: RawQueryValue;
   courseId?: RawQueryValue;
@@ -49,6 +54,7 @@ export type EnrollmentListQuery = {
 export type ParsedEnrollmentListQuery = {
   q?: string;
   paymentStatuses?: string[];
+  program: string;
   trackTokens: string[];
   isMinor?: boolean | 'unknown';
   dateOfBirth?: string;
@@ -66,6 +72,7 @@ export type ParsedEnrollmentListQuery = {
 };
 
 export type EnrollmentFilterInput = {
+  program?: string;
   q?: string;
   paymentStatuses?: string[];
   trackSlugs?: string[];
@@ -106,6 +113,7 @@ export function parseEnrollmentListQuery(
   return {
     q: one(query.q)?.trim() || undefined,
     paymentStatuses: payment.statuses,
+    program: resolveProgram(one(query.program)),
     trackTokens: collectTrackTokens(
       query.track,
       query.course,
@@ -153,6 +161,9 @@ export function applyEnrollmentFilters(
     qb.andWhere('1 = 0');
     return;
   }
+  qb.andWhere('LOWER(e.program) = LOWER(:program)', {
+    program: filters.program?.trim() || CORE_30_PROGRAM,
+  });
   if (filters.paymentStatuses?.length) {
     qb.andWhere('e.payment_status IN (:...paymentStatuses)', {
       paymentStatuses: filters.paymentStatuses,
