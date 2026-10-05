@@ -13,7 +13,8 @@ import { LessThan, Repository } from 'typeorm';
 import { CourseEntity } from '../course/entities/course.entity';
 import { EnterFirstService } from '../enter-first/enter-first.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
-import { maskEmail, maskName, maskPhone } from '../enter-first/pii';
+import type { ParsedEnrollmentListQuery } from '../enter-first/enrollment-list-filters';
+import { maskEmail, maskName } from '../enter-first/pii';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
 import type { CreateDataRequestDto } from './dto/compliance.dto';
 import { DataRequestEntity } from './entities/data-request.entity';
@@ -195,57 +196,8 @@ export class ComplianceService {
     return this.enterFirst.resendConfirmation(id);
   }
 
-  async exportCsv(from?: string, to?: string, maskPii = false) {
-    const range = this.range(from, to);
-    const rows = await this.enrollments
-      .createQueryBuilder('e')
-      .where('e.created_at BETWEEN :from AND :to', range)
-      .orderBy('e.created_at', 'ASC')
-      .getMany();
-    const header = [
-      'id',
-      'createdAt',
-      'firstName',
-      'lastName',
-      'email',
-      'phone',
-      'tracks',
-      'amount',
-      'currency',
-      'paymentStatus',
-      'reference',
-      'paidAt',
-      'consentAt',
-      'marketingOptIn',
-      'isMinor',
-      'amountMismatch',
-      'emailSentAt',
-    ];
-    const lines = [header.join(',')];
-    for (const row of rows) {
-      lines.push(
-        [
-          row.id,
-          iso(row.createdAt),
-          csv(maskPii ? maskName(row.firstName) : row.firstName),
-          csv(maskPii ? maskName(row.lastName) : row.lastName),
-          csv(maskPii ? maskEmail(row.email) : row.email),
-          csv(maskPii ? maskPhone(row.phone) : row.phone),
-          csv(row.tracks.join('|')),
-          row.amount,
-          row.currency,
-          row.paymentStatus,
-          csv(row.paystackReference),
-          iso(row.paidAt),
-          iso(row.consentAt),
-          row.marketingOptIn ? 'true' : 'false',
-          row.isMinor == null ? '' : String(row.isMinor),
-          row.amountMismatch ? 'true' : 'false',
-          iso(row.emailSentAt),
-        ].join(','),
-      );
-    }
-    return lines.join('\n');
+  exportCsv(query: ParsedEnrollmentListQuery, maskPii = false) {
+    return this.enterFirst.exportCsv(query, maskPii);
   }
 
   async tests() {
@@ -510,12 +462,6 @@ function iso(value?: Date | null) {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
-}
-
-function csv(value?: string | null) {
-  const text = value ?? '';
-  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
 }
 
 function daysAgo(days: number) {

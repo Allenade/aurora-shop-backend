@@ -16,7 +16,7 @@ export class AuditLogController {
     operationId: 'listAuditLogs',
     summary: 'List audit logs',
     description:
-      'Filters: type, action, userId, resourceType, resourceId, from, to, page, limit.',
+      'Each row includes actor (id, email, name), action, timestamp, ip, userAgent, and requestId, plus type, userId, resourceType, resourceId, decision, reason, metadata, and createdAt. Filters: type, action, userId, resourceType, resourceId, from, to, page, limit.',
   })
   list(
     @Query('type') type?: string,
