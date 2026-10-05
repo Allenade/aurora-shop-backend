@@ -9,11 +9,13 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EnvTypes } from '@app/shared';
 import { parseRateLimitEnabled } from '@app/shared';
-import { LessThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { CourseEntity } from '../course/entities/course.entity';
 import { EnterFirstService } from '../enter-first/enter-first.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
-import { maskEmail, maskName, maskPhone } from '../enter-first/pii';
+import type { ParsedEnrollmentFilters } from '../enter-first/enrollment-filters';
+import { maskEmail, maskName } from '../enter-first/pii';
+import { resolveProgram } from '../program/core30';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
 import type { CreateDataRequestDto } from './dto/compliance.dto';
 import { DataRequestEntity } from './entities/data-request.entity';
@@ -34,7 +36,8 @@ export class ComplianceService {
     private readonly config: ConfigService<EnvTypes, true>,
   ) {}
 
-  async summary(from?: string, to?: string) {
+  async summary(from?: string, to?: string, program?: string) {
+    const selected = resolveProgram(program);
     const range = this.range(from, to);
     const rows = await this.enrollments
       .createQueryBuilder('e')
@@ -42,6 +45,7 @@ export class ComplianceService {
       .addSelect('COUNT(*)', 'count')
       .addSelect('COALESCE(SUM(e.amount), 0)', 'amount')
       .where('e.created_at BETWEEN :from AND :to', range)
+      .andWhere('LOWER(e.program) = LOWER(:program)', { program: selected })
       .groupBy('e.payment_status')
       .getRawMany<{ status: string; count: string; amount: string }>();
 
@@ -59,16 +63,23 @@ export class ComplianceService {
     const consent = await this.enrollments
       .createQueryBuilder('e')
       .where('e.created_at BETWEEN :from AND :to', range)
+      .andWhere('LOWER(e.program) = LOWER(:program)', { program: selected })
       .andWhere('e.consent_at IS NOT NULL')
       .getCount();
     const unknownAge = await this.enrollments
       .createQueryBuilder('e')
       .where('e.created_at BETWEEN :from AND :to', range)
+      .andWhere('LOWER(e.program) = LOWER(:program)', { program: selected })
       .andWhere('e.date_of_birth IS NULL')
       .getCount();
-    const stalePending = await this.stalePendingCount();
-    const exceptions = await this.exceptionCount(range);
-    const courseRows = await this.courses.find({ order: { sortOrder: 'ASC' } });
+    const stalePending = await this.stalePendingCount(selected);
+    const exceptions = await this.exceptionCount(range, selected);
+    const courseRows = await this.courses
+      .createQueryBuilder('c')
+      .where('LOWER(c.program) = LOWER(:program)', { program: selected })
+      .orderBy('c.sortOrder', 'ASC')
+      .addOrderBy('c.name', 'ASC')
+      .getMany();
     const seats: Array<{
       slug: string;
       name: string;
@@ -83,6 +94,7 @@ export class ComplianceService {
         .andWhere('e.payment_status IN (:...statuses)', {
           statuses: ['pending', 'success'],
         })
+        .andWhere('LOWER(e.program) = LOWER(:program)', { program: selected })
         .andWhere('e.tracks @> CAST(:track AS jsonb)', {
           track: JSON.stringify([course.slug]),
         })
@@ -97,6 +109,7 @@ export class ComplianceService {
     }
 
     return {
+      program: selected,
       from: range.from.toISOString(),
       to: range.to.toISOString(),
       countsByStatus: byStatus,
@@ -109,7 +122,8 @@ export class ComplianceService {
     };
   }
 
-  async timeline(from?: string, to?: string) {
+  async timeline(from?: string, to?: string, program?: string) {
+    const selected = resolveProgram(program);
     const range = this.range(from, to);
     const rows: Array<{
       day: Date | string;
@@ -122,10 +136,12 @@ export class ComplianceService {
               COUNT(*) FILTER (WHERE payment_status = 'success')::int AS paid,
               COALESCE(SUM(amount) FILTER (WHERE payment_status = 'success'), 0)::int AS collected
        FROM enter_first_enrollment
-       WHERE deleted_at IS NULL AND created_at BETWEEN $1 AND $2
+       WHERE deleted_at IS NULL
+         AND created_at BETWEEN $1 AND $2
+         AND LOWER(program) = LOWER($3)
        GROUP BY 1
        ORDER BY 1`,
-      [range.from, range.to],
+      [range.from, range.to, selected],
     );
     return rows.map((row) => ({
       day: new Date(row.day).toISOString().slice(0, 10),
@@ -135,16 +151,18 @@ export class ComplianceService {
     }));
   }
 
-  async exceptions(maskPii = false) {
+  async exceptions(maskPii = false, program?: string) {
+    const selected = resolveProgram(program);
     const staleBefore = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const rows = await this.enrollments
       .createQueryBuilder('e')
-      .where(
-        `(e.payment_status = 'success' AND e.amount > 0 AND (e.verified_at IS NULL OR e.paystack_transaction_id IS NULL))
+      .where('LOWER(e.program) = LOWER(:program)', { program: selected })
+      .andWhere(
+        `((e.payment_status = 'success' AND e.amount > 0 AND (e.verified_at IS NULL OR e.paystack_transaction_id IS NULL))
          OR e.amount_mismatch = true
          OR e.currency_mismatch = true
          OR (e.payment_status = 'success' AND e.email_sent_at IS NULL)
-         OR (e.payment_status = 'pending' AND e.amount > 0 AND e.created_at < :stale)`,
+         OR (e.payment_status = 'pending' AND e.amount > 0 AND e.created_at < :stale))`,
         { stale: staleBefore },
       )
       .orderBy('e.created_at', 'DESC')
@@ -184,7 +202,7 @@ export class ComplianceService {
         createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
       });
     }
-    return { items };
+    return { program: selected, items };
   }
 
   reverify(id: string) {
@@ -195,57 +213,12 @@ export class ComplianceService {
     return this.enterFirst.resendConfirmation(id);
   }
 
-  async exportCsv(from?: string, to?: string, maskPii = false) {
-    const range = this.range(from, to);
-    const rows = await this.enrollments
-      .createQueryBuilder('e')
-      .where('e.created_at BETWEEN :from AND :to', range)
-      .orderBy('e.created_at', 'ASC')
-      .getMany();
-    const header = [
-      'id',
-      'createdAt',
-      'firstName',
-      'lastName',
-      'email',
-      'phone',
-      'tracks',
-      'amount',
-      'currency',
-      'paymentStatus',
-      'reference',
-      'paidAt',
-      'consentAt',
-      'marketingOptIn',
-      'isMinor',
-      'amountMismatch',
-      'emailSentAt',
-    ];
-    const lines = [header.join(',')];
-    for (const row of rows) {
-      lines.push(
-        [
-          row.id,
-          iso(row.createdAt),
-          csv(maskPii ? maskName(row.firstName) : row.firstName),
-          csv(maskPii ? maskName(row.lastName) : row.lastName),
-          csv(maskPii ? maskEmail(row.email) : row.email),
-          csv(maskPii ? maskPhone(row.phone) : row.phone),
-          csv(row.tracks.join('|')),
-          row.amount,
-          row.currency,
-          row.paymentStatus,
-          csv(row.paystackReference),
-          iso(row.paidAt),
-          iso(row.consentAt),
-          row.marketingOptIn ? 'true' : 'false',
-          row.isMinor == null ? '' : String(row.isMinor),
-          row.amountMismatch ? 'true' : 'false',
-          iso(row.emailSentAt),
-        ].join(','),
-      );
-    }
-    return lines.join('\n');
+  exportCsv(query: ParsedEnrollmentFilters, maskPii = false) {
+    const range = this.range(query.fromRaw, query.toRaw);
+    return this.enterFirst.exportCsv(
+      { ...query, from: range.from, to: range.to },
+      maskPii,
+    );
   }
 
   async tests() {
@@ -344,6 +317,7 @@ export class ComplianceService {
         lastName: row.lastName,
         email: row.email,
         phone: row.phone ?? null,
+        program: row.program,
         tracks: row.tracks,
         amount: row.amount,
         currency: row.currency,
@@ -439,26 +413,32 @@ export class ComplianceService {
     return { from: start, to: end };
   }
 
-  private async stalePendingCount() {
-    return this.enrollments.count({
-      where: {
-        paymentStatus: 'pending',
-        createdAt: LessThan(new Date(Date.now() - 24 * 60 * 60 * 1000)),
-      },
-    });
+  private async stalePendingCount(program: string) {
+    return this.enrollments
+      .createQueryBuilder('e')
+      .where('e.payment_status = :status', { status: 'pending' })
+      .andWhere('e.created_at < :cutoff', {
+        cutoff: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      })
+      .andWhere('LOWER(e.program) = LOWER(:program)', { program })
+      .getCount();
   }
 
-  private async exceptionCount(range: { from: Date; to: Date }) {
+  private async exceptionCount(
+    range: { from: Date; to: Date },
+    program: string,
+  ) {
     const staleBefore = new Date(Date.now() - 24 * 60 * 60 * 1000);
     return this.enrollments
       .createQueryBuilder('e')
       .where('e.created_at BETWEEN :from AND :to', range)
+      .andWhere('LOWER(e.program) = LOWER(:program)', { program })
       .andWhere(
-        `(e.payment_status = 'success' AND e.amount > 0 AND (e.verified_at IS NULL OR e.paystack_transaction_id IS NULL))
+        `((e.payment_status = 'success' AND e.amount > 0 AND (e.verified_at IS NULL OR e.paystack_transaction_id IS NULL))
          OR e.amount_mismatch = true
          OR e.currency_mismatch = true
          OR (e.payment_status = 'success' AND e.email_sent_at IS NULL)
-         OR (e.payment_status = 'pending' AND e.amount > 0 AND e.created_at < :stale)`,
+         OR (e.payment_status = 'pending' AND e.amount > 0 AND e.created_at < :stale))`,
         { stale: staleBefore },
       )
       .getCount();
@@ -510,12 +490,6 @@ function iso(value?: Date | null) {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
-}
-
-function csv(value?: string | null) {
-  const text = value ?? '';
-  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
 }
 
 function daysAgo(days: number) {

@@ -6,6 +6,7 @@ import { Core30Compliance1735689600000 } from './migrations/1735689600000-Core30
 import { CoursePriceNullable1735689700000 } from './migrations/1735689700000-CoursePriceNullable';
 import { EnrollmentColumnAlign1735689800000 } from './migrations/1735689800000-EnrollmentColumnAlign';
 import { RemoveSeededRows1735689900000 } from './migrations/1735689900000-RemoveSeededRows';
+import { Core30Program1735690100000 } from './migrations/1735690100000-Core30Program';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { RemoveSeededRows1735689900000 } from './migrations/1735689900000-Remove
             CoursePriceNullable1735689700000,
             EnrollmentColumnAlign1735689800000,
             RemoveSeededRows1735689900000,
+            Core30Program1735690100000,
           ],
           migrationsRun: true,
           logging: false,

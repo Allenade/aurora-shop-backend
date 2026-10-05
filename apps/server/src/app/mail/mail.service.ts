@@ -61,6 +61,7 @@ export class MailService {
     email: string;
     firstName: string;
     lastName: string;
+    program?: string;
     tracks: string[];
     amount: number;
     currency: string;
@@ -68,6 +69,7 @@ export class MailService {
   }) {
     const fromName = this.config.get('email.fromName', { infer: true });
     const fromEmail = this.config.get('email.fromEmail', { infer: true });
+    const program = input.program?.trim() || 'Core 3.0';
     const tracks = input.tracks.length
       ? input.tracks.join(', ')
       : 'your selected track(s)';
@@ -75,11 +77,12 @@ export class MailService {
       input.amount > 0
         ? `${input.currency} ${input.amount.toLocaleString('en-NG')}`
         : 'Free';
-    const subject = 'Core 3.0 enrollment confirmed';
+    const subject = `${program} enrollment confirmed`;
     const text = `Hi ${input.firstName},
 
-Your Core 3.0 enrollment is confirmed.
+Your ${program} enrollment is confirmed.
 
+Program: ${program}
 Tracks: ${tracks}
 Amount: ${amountLabel}
 Reference: ${input.reference}
@@ -89,8 +92,9 @@ We'll follow up with next steps shortly.
 — Aurora Robotics`;
     const html = `
       <p>Hi ${input.firstName},</p>
-      <p>Your <strong>Core 3.0</strong> enrollment is confirmed.</p>
+      <p>Your <strong>${program}</strong> enrollment is confirmed.</p>
       <ul>
+        <li><strong>Program:</strong> ${program}</li>
         <li><strong>Tracks:</strong> ${tracks}</li>
         <li><strong>Amount:</strong> ${amountLabel}</li>
         <li><strong>Reference:</strong> ${input.reference}</li>

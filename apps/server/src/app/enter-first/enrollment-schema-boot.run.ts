@@ -4,6 +4,7 @@ import { shouldSynchronizeSchema } from '@app/shared/config/env.config';
 import { Core30Compliance1735689600000 } from '@app/shared/database/migrations/1735689600000-Core30Compliance';
 import { CoursePriceNullable1735689700000 } from '@app/shared/database/migrations/1735689700000-CoursePriceNullable';
 import { EnrollmentColumnAlign1735689800000 } from '@app/shared/database/migrations/1735689800000-EnrollmentColumnAlign';
+import { Core30Program1735690100000 } from '@app/shared/database/migrations/1735690100000-Core30Program';
 import { EnterFirstEnrollmentEntity } from './entities/enter-first-enrollment.entity';
 
 const databaseUrl =
@@ -17,6 +18,7 @@ const migrations = [
   Core30Compliance1735689600000,
   CoursePriceNullable1735689700000,
   EnrollmentColumnAlign1735689800000,
+  Core30Program1735690100000,
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,8 +98,16 @@ async function main() {
   await migrated.initialize();
   const afterMigration = rowsOf(
     await migrated.query(
-      `SELECT first_name, last_name, email, phone, amount, payment_status, paystack_reference, form, price_snapshot
+      `SELECT first_name, last_name, email, phone, amount, payment_status, paystack_reference, form, price_snapshot, program
        FROM enter_first_enrollment ORDER BY paystack_reference`,
+    ),
+  );
+  const courseCount = rowsOf(
+    await migrated.query(`SELECT COUNT(*)::int AS count FROM course`),
+  );
+  const templateCount = rowsOf(
+    await migrated.query(
+      `SELECT COUNT(*)::int AS count FROM email_template WHERE slug = 'enrollment-confirmation'`,
     ),
   );
   const lengths = rowsOf(
@@ -120,12 +130,16 @@ async function main() {
   assert.equal(kept.amount, 15000);
   assert.equal(kept.payment_status, 'success');
   assert.equal(kept.paystack_reference, 'EF-KEEP-1');
+  assert.equal(kept.program, 'Core 3.0');
   assert.deepEqual(kept.form, { firstName: 'kept' });
   assert.deepEqual(kept.price_snapshot, []);
+  assert.equal(Number(courseCount[0]?.count), 0);
+  assert.equal(Number(templateCount[0]?.count), 0);
   const second = afterMigration[1];
   assert.ok(second);
   assert.equal(second.first_name, 'Chinedu');
   assert.equal(second.phone, null);
+  assert.equal(second.program, 'Core 3.0');
 
   const lengthByColumn = new Map(
     lengths.map((row) => [row.column_name, row.character_maximum_length]),
