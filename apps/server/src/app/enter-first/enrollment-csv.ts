@@ -1,7 +1,8 @@
 import { CORE_30_PROGRAM } from '../program/core30';
+import { completedAge, dateOnly } from './age';
 import { maskEmail, maskName, maskPhone } from './pii';
 
-export type EnrollmentCsvSource = {
+export type EnrollmentCsvRow = {
   id: string;
   createdAt?: Date | null;
   firstName: string;
@@ -20,6 +21,10 @@ export type EnrollmentCsvSource = {
   isMinor?: boolean | null;
   amountMismatch: boolean;
   emailSentAt?: Date | null;
+  dateOfBirth?: string | Date | null;
+  ageConfirmed?: boolean | null;
+  guardianName?: string | null;
+  guardianEmail?: string | null;
 };
 
 const HEADER = [
@@ -41,11 +46,21 @@ const HEADER = [
   'isMinor',
   'amountMismatch',
   'emailSentAt',
+  'dateOfBirth',
+  'age',
+  'ageConfirmed',
+  'guardianName',
+  'guardianEmail',
 ];
 
-export function enrollmentsToCsv(rows: EnrollmentCsvSource[], maskPii = false) {
+export function enrollmentsToCsv(
+  rows: EnrollmentCsvRow[],
+  maskPii = false,
+  now = new Date(),
+) {
   const lines = [HEADER.join(',')];
   for (const row of rows) {
+    const dob = maskPii ? null : dateOnly(row.dateOfBirth);
     lines.push(
       [
         row.id,
@@ -66,10 +81,20 @@ export function enrollmentsToCsv(rows: EnrollmentCsvSource[], maskPii = false) {
         row.isMinor == null ? '' : String(row.isMinor),
         row.amountMismatch ? 'true' : 'false',
         iso(row.emailSentAt),
+        csv(dob),
+        maskPii ? '' : ageCell(dob, now),
+        row.ageConfirmed == null ? '' : String(row.ageConfirmed),
+        csv(maskPii ? maskName(row.guardianName) : row.guardianName),
+        csv(maskPii ? maskEmail(row.guardianEmail) : row.guardianEmail),
       ].join(','),
     );
   }
-  return lines.join('\n');
+  return `\uFEFF${lines.join('\r\n')}`;
+}
+
+function ageCell(dob: string | null, now: Date) {
+  const age = completedAge(dob, now);
+  return age == null ? '' : String(age);
 }
 
 function iso(value?: Date | null) {
@@ -80,6 +105,6 @@ function iso(value?: Date | null) {
 
 function csv(value?: string | null) {
   const text = value ?? '';
-  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
   return text;
 }

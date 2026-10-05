@@ -20,10 +20,10 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import type { JwtPayload } from '../auth/dto/auth.types';
 import { EnterFirstEnrollDto } from './dto/enroll.dto';
 import {
-  ENROLLMENT_FILTER_DOCS,
-  type EnrollmentFilterQuery,
-} from './enrollment-filters';
-import { enrollmentQuery } from './enrollment-query';
+  ENROLLMENT_LIST_QUERY_DOCS,
+  type EnrollmentListQuery,
+} from './enrollment-list-filters';
+import { enrollmentQuery } from './enrollment-list-query';
 import { EnterFirstService } from './enter-first.service';
 
 @ApiTags('Enter First')
@@ -69,11 +69,11 @@ export class EnterFirstController {
   @ApiOperation({
     operationId: 'listEnterFirstEnrollments',
     summary: 'List Enter First enrollments',
-    description: `Website / Enter First payment enrollments for admin. Defaults to program Core 3.0. compliance_viewer responses mask PII. ${ENROLLMENT_FILTER_DOCS}`,
+    description: `Website / Enter First payment enrollments for admin. Defaults to program Core 3.0. compliance_viewer responses mask PII. ${ENROLLMENT_LIST_QUERY_DOCS}`,
   })
   async list(
     @CurrentUser() user: JwtPayload,
-    @Query() query: EnrollmentFilterQuery,
+    @Query() query: EnrollmentListQuery,
   ) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
     return this.enterFirst.list(enrollmentQuery(query), maskPii);

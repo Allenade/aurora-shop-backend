@@ -4,10 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AuditLogType } from '@app/shared';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { splitCourseTokens } from '../enter-first/enrollment-filters';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
 import { CORE_30_PROGRAM } from '../program/core30';
 import { coursesForProgram } from './course-catalogue';
@@ -269,33 +268,14 @@ export class CourseService {
     return result;
   }
 
-  /**
-   * Turns filter tokens into track slugs that exist in the program.
-   * Slugs are kept so historical enrollments still match after a course row
-   * is removed. Unknown ids with no remaining slug match nothing.
-   */
-  async resolveFilterSlugs(tokens: string[], program: string) {
-    const { ids, slugs } = splitCourseTokens(tokens);
-    if (!ids.length && !slugs.length) {
-      return { slugs: [] as string[], forceEmpty: false };
-    }
-    const resolved = new Set(slugs);
-    if (ids.length) {
-      const rows = await this.courses
-        .createQueryBuilder('c')
-        .where('c.id IN (:...ids)', { ids })
-        .andWhere('LOWER(c.program) = LOWER(:program)', { program })
-        .getMany();
-      const found = new Set(rows.map((row) => row.id.toLowerCase()));
-      for (const row of rows) resolved.add(row.slug);
-      if (
-        ids.some((id) => !found.has(id.toLowerCase())) &&
-        resolved.size === 0
-      ) {
-        return { slugs: [] as string[], forceEmpty: true };
-      }
-    }
-    return { slugs: [...resolved], forceEmpty: false };
+  async findSlugsByIds(ids: string[]) {
+    if (!ids.length) return [];
+    const rows = await this.courses.find({ where: { id: In(ids) } });
+    return rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      program: row.program,
+    }));
   }
 
   async seatsHeld(slug: string, program = CORE_30_PROGRAM) {
