@@ -20,14 +20,15 @@ import {
 import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { reconcileProviderStatus } from '../payment-gateway/paystack/reconcile-charge';
 import { CORE_30_PROGRAM } from '../program/core30';
-import { isUnder18 } from './age';
+import { completedAge, dateOnly, isUnder18 } from './age';
 import type { EnterFirstEnrollDto } from './dto/enroll.dto';
 import { enrollmentsToCsv } from './enrollment-csv';
 import {
+  ENROLLMENT_EXPORT_ROW_CAP,
   applyEnrollmentFilters,
-  type EnrollmentFilterInput,
-  type ParsedEnrollmentFilters,
-} from './enrollment-filters';
+  splitTrackTokens,
+  type ParsedEnrollmentListQuery,
+} from './enrollment-list-filters';
 import {
   EnterFirstEnrollmentEntity,
   type EnterFirstFormPayload,
@@ -283,14 +284,14 @@ export class EnterFirstService {
     }
   }
 
-  async list(query: ParsedEnrollmentFilters, maskPii = false) {
+  async list(query: ParsedEnrollmentListQuery, maskPii = false) {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 10));
-    const filters = await this.scopedFilters(query);
+    const filters = await this.enrollmentFilters(query);
     const qb = this.enrollments.createQueryBuilder('e');
     applyEnrollmentFilters(qb, filters);
     const [items, total] = await qb
-      .orderBy('e.created_at', 'DESC')
+      .orderBy('e.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
@@ -305,12 +306,21 @@ export class EnterFirstService {
     };
   }
 
-  async exportCsv(query: ParsedEnrollmentFilters, maskPii = false) {
-    const filters = await this.scopedFilters(query);
+  async exportCsv(query: ParsedEnrollmentListQuery, maskPii = false) {
     const qb = this.enrollments.createQueryBuilder('e');
-    applyEnrollmentFilters(qb, filters);
-    const rows = await qb.orderBy('e.created_at', 'ASC').getMany();
-    return enrollmentsToCsv(rows, maskPii);
+    applyEnrollmentFilters(qb, await this.enrollmentFilters(query));
+    const rows = await qb
+      .orderBy('e.createdAt', 'ASC')
+      .take(ENROLLMENT_EXPORT_ROW_CAP + 1)
+      .getMany();
+    const truncated = rows.length > ENROLLMENT_EXPORT_ROW_CAP;
+    return {
+      csv: enrollmentsToCsv(
+        truncated ? rows.slice(0, ENROLLMENT_EXPORT_ROW_CAP) : rows,
+        maskPii,
+      ),
+      truncated,
+    };
   }
 
   async getById(id: string, maskPii = false) {
@@ -427,21 +437,40 @@ export class EnterFirstService {
     return `EF-${Date.now()}-${randomInt(100, 999)}`;
   }
 
-  private async scopedFilters(
-    query: ParsedEnrollmentFilters,
-  ): Promise<EnrollmentFilterInput> {
-    const resolved = await this.courses.resolveFilterSlugs(
-      query.courseTokens,
-      query.program,
-    );
+  private async enrollmentFilters(query: ParsedEnrollmentListQuery) {
+    const { ids, slugs } = splitTrackTokens(query.trackTokens);
+    const resolved = new Set(slugs);
+    let forceEmpty = query.forceEmpty;
+    if (ids.length) {
+      const rows = await this.courses.findSlugsByIds(ids);
+      const inProgram = rows.filter(
+        (row) => row.program.toLowerCase() === query.program.toLowerCase(),
+      );
+      const found = new Set(inProgram.map((row) => row.id.toLowerCase()));
+      for (const row of inProgram) resolved.add(row.slug);
+      if (
+        ids.some((id) => !found.has(id.toLowerCase())) &&
+        resolved.size === 0
+      ) {
+        forceEmpty = true;
+      }
+    }
     return {
       program: query.program,
       q: query.q,
       paymentStatuses: query.paymentStatuses,
-      trackSlugs: resolved.slugs,
-      forceEmpty: resolved.forceEmpty,
+      trackSlugs: [...resolved],
+      forceEmpty,
+      isMinor: query.isMinor,
+      dateOfBirth: query.dateOfBirth,
+      dobFrom: query.dobFrom,
+      dobTo: query.dobTo,
+      ageMin: query.ageMin,
+      ageMax: query.ageMax,
       from: query.from,
       to: query.to,
+      paidFrom: query.paidFrom,
+      paidTo: query.paidTo,
     };
   }
 
@@ -509,7 +538,8 @@ export class EnterFirstService {
       consentIp: maskPii ? null : (row.consentIp ?? null),
       consentUserAgent: maskPii ? null : (row.consentUserAgent ?? null),
       ageConfirmed: row.ageConfirmed ?? null,
-      dateOfBirth: maskPii ? null : (row.dateOfBirth ?? null),
+      dateOfBirth: maskPii ? null : dateOnly(row.dateOfBirth),
+      age: maskPii ? null : completedAge(dateOnly(row.dateOfBirth)),
       isMinor: row.isMinor ?? null,
       guardianName: maskPii
         ? maskName(row.guardianName)

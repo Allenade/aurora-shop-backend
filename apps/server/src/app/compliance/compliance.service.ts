@@ -13,7 +13,7 @@ import { Repository } from 'typeorm';
 import { CourseEntity } from '../course/entities/course.entity';
 import { EnterFirstService } from '../enter-first/enter-first.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
-import type { ParsedEnrollmentFilters } from '../enter-first/enrollment-filters';
+import type { ParsedEnrollmentListQuery } from '../enter-first/enrollment-list-filters';
 import { maskEmail, maskName } from '../enter-first/pii';
 import { resolveProgram } from '../program/core30';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
@@ -213,12 +213,8 @@ export class ComplianceService {
     return this.enterFirst.resendConfirmation(id);
   }
 
-  exportCsv(query: ParsedEnrollmentFilters, maskPii = false) {
-    const range = this.range(query.fromRaw, query.toRaw);
-    return this.enterFirst.exportCsv(
-      { ...query, from: range.from, to: range.to },
-      maskPii,
-    );
+  exportCsv(query: ParsedEnrollmentListQuery, maskPii = false) {
+    return this.enterFirst.exportCsv(query, maskPii);
   }
 
   async tests() {
