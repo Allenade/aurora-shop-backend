@@ -15,6 +15,11 @@ import { PiiAccessService } from '../auth/pii-access.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import type { JwtPayload } from '../auth/dto/auth.types';
+import {
+  ENROLLMENT_LIST_QUERY_DOCS,
+  type EnrollmentListQuery,
+} from '../enter-first/enrollment-list-filters';
+import { enrollmentQuery } from '../enter-first/enrollment-list-query';
 import { ComplianceService } from './compliance.service';
 import { CreateDataRequestDto } from './dto/compliance.dto';
 
@@ -33,10 +38,14 @@ export class ComplianceController {
     operationId: 'getComplianceSummary',
     summary: 'Compliance summary',
     description:
-      'Counts by status, amount collected, pending over 24h, exceptions, consent percent, unknown-age students, and seats per course.',
+      'Counts by status, amount collected, pending over 24h, exceptions, consent percent, unknown-age students, and seats per course. Defaults to program Core 3.0. Seats are counted from courses stored in that program.',
   })
-  summary(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.compliance.summary(from, to);
+  summary(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('program') program?: string,
+  ) {
+    return this.compliance.summary(from, to, program);
   }
 
   @Get('timeline')
@@ -44,9 +53,14 @@ export class ComplianceController {
   @ApiOperation({
     operationId: 'getComplianceTimeline',
     summary: 'Enrollment timeline',
+    description: 'Daily counts for one program. Defaults to Core 3.0.',
   })
-  timeline(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.compliance.timeline(from, to);
+  timeline(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('program') program?: string,
+  ) {
+    return this.compliance.timeline(from, to, program);
   }
 
   @Get('exceptions')
@@ -55,11 +69,14 @@ export class ComplianceController {
     operationId: 'listComplianceExceptions',
     summary: 'Reconciliation exceptions',
     description:
-      'Paid but not verified, amount mismatch, paid with no email, and stale pending.',
+      'Paid but not verified, amount mismatch, paid with no email, and stale pending. Defaults to program Core 3.0.',
   })
-  async exceptions(@CurrentUser() user: JwtPayload) {
+  async exceptions(
+    @CurrentUser() user: JwtPayload,
+    @Query('program') program?: string,
+  ) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
-    return this.compliance.exceptions(maskPii);
+    return this.compliance.exceptions(maskPii, program);
   }
 
   @Post('enrollments/:id/reverify')
@@ -88,19 +105,23 @@ export class ComplianceController {
   @ApiOperation({
     operationId: 'exportComplianceCsv',
     summary: 'Export enrollments CSV',
+    description: `UTF-8 CSV with a BOM and CRLF rows for Excel. Same filters as the enrollment list, including program (default Core 3.0), up to 20000 rows. PDF stays on the dashboard. ${ENROLLMENT_LIST_QUERY_DOCS}`,
   })
   async exportCsv(
     @CurrentUser() user: JwtPayload,
     @Res({ passthrough: true }) res: Response,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: EnrollmentListQuery,
   ) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
-    const csv = await this.compliance.exportCsv(from, to, maskPii);
+    const { csv, truncated } = await this.compliance.exportCsv(
+      enrollmentQuery(query),
+      maskPii,
+    );
     res.setHeader(
       'Content-Disposition',
       'attachment; filename="core30-enrollments.csv"',
     );
+    if (truncated) res.setHeader('X-Export-Truncated', 'true');
     return csv;
   }
 

@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { AuditLogEntry } from '@app/shared';
-import { AuditLogEntity } from './entities/audit-log.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { UserEntity } from '../user/entities/user.entity';
+import { toAuditListItem, type AuditActorUser } from './audit-log.presenter';
+import { AuditLogEntity } from './entities/audit-log.entity';
 
 const SENSITIVE = /password|token|secret|otp|pin|key|cvv|card/i;
 
@@ -22,6 +24,8 @@ export class AuditLogService {
   constructor(
     @InjectRepository(AuditLogEntity)
     private readonly repo: Repository<AuditLogEntity>,
+    @InjectRepository(UserEntity)
+    private readonly users: Repository<UserEntity>,
   ) {}
 
   log(entry: AuditLogEntry) {
@@ -76,26 +80,38 @@ export class AuditLogService {
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
+    const actors = await this.actorsFor(items);
     return {
-      items: items.map((row) => ({
-        id: row.id,
-        type: row.type,
-        action: row.action,
-        userId: row.userId ?? null,
-        resourceType: row.resourceType ?? null,
-        resourceId: row.resourceId ?? null,
-        decision: row.decision ?? null,
-        reason: row.reason ?? null,
-        metadata: row.metadata ?? null,
-        ip: row.ip ?? null,
-        userAgent: row.userAgent ?? null,
-        requestId: row.requestId ?? null,
-        createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
-      })),
+      items: items.map((row) =>
+        toAuditListItem(row, row.userId ? actors.get(row.userId) : null),
+      ),
       total,
       page,
       limit,
       pageCount: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  private async actorsFor(rows: AuditLogEntity[]) {
+    const ids = [
+      ...new Set(
+        rows.map((row) => row.userId).filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const actors = new Map<string, AuditActorUser>();
+    if (!ids.length) return actors;
+    const users = await this.users.find({
+      where: { id: In(ids) },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+    for (const user of users) {
+      actors.set(user.id, {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      });
+    }
+    return actors;
   }
 }

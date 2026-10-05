@@ -9,7 +9,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
-import { ILike, LessThan, MoreThan, Repository } from 'typeorm';
+import { LessThan, MoreThan, Repository } from 'typeorm';
 import { CourseService } from '../course/course.service';
 import { MailService } from '../mail/mail.service';
 import {
@@ -19,12 +19,19 @@ import {
 } from '../payment-gateway/_contract/payment.types';
 import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { reconcileProviderStatus } from '../payment-gateway/paystack/reconcile-charge';
-import { isUnder18 } from './age';
+import { CORE_30_PROGRAM } from '../program/core30';
+import { completedAge, dateOnly, isUnder18 } from './age';
 import type { EnterFirstEnrollDto } from './dto/enroll.dto';
+import { enrollmentsToCsv } from './enrollment-csv';
+import {
+  ENROLLMENT_EXPORT_ROW_CAP,
+  applyEnrollmentFilters,
+  splitTrackTokens,
+  type ParsedEnrollmentListQuery,
+} from './enrollment-list-filters';
 import {
   EnterFirstEnrollmentEntity,
   type EnterFirstFormPayload,
-  type EnterFirstPaymentStatus,
 } from './entities/enter-first-enrollment.entity';
 import { maskEmail, maskName, maskPhone } from './pii';
 
@@ -95,6 +102,7 @@ export class EnterFirstService {
     const row = await this.enrollments.save(
       this.enrollments.create({
         source: 'enter_first',
+        program: CORE_30_PROGRAM,
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -161,6 +169,7 @@ export class EnterFirstService {
       channels,
       metadata: {
         product: 'enter_first',
+        program: CORE_30_PROGRAM,
         enrollmentId: row.id,
         tracks,
       },
@@ -275,54 +284,42 @@ export class EnterFirstService {
     }
   }
 
-  async list(opts: {
-    q?: string;
-    paymentStatus?: string;
-    page?: number;
-    limit?: number;
-    maskPii?: boolean;
-  }) {
-    const page = Math.max(1, opts.page ?? 1);
-    const limit = Math.min(100, Math.max(1, opts.limit ?? 10));
-    const where: Record<string, unknown>[] = [];
-
-    const statusFilter = opts.paymentStatus
-      ?.split(',')
-      .map((s) => s.trim())
-      .filter(Boolean) as EnterFirstPaymentStatus[] | undefined;
-
-    if (opts.q?.trim()) {
-      const q = `%${opts.q.trim()}%`;
-      const base = statusFilter?.length
-        ? statusFilter.map((paymentStatus) => ({ paymentStatus }))
-        : [{}];
-      for (const statusWhere of base) {
-        where.push(
-          { ...statusWhere, firstName: ILike(q) },
-          { ...statusWhere, lastName: ILike(q) },
-          { ...statusWhere, email: ILike(q) },
-          { ...statusWhere, paystackReference: ILike(q) },
-        );
-      }
-    } else if (statusFilter?.length) {
-      for (const paymentStatus of statusFilter) {
-        where.push({ paymentStatus });
-      }
-    }
-
-    const [items, total] = await this.enrollments.findAndCount({
-      where: where.length ? where : undefined,
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  async list(query: ParsedEnrollmentListQuery, maskPii = false) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 10));
+    const filters = await this.enrollmentFilters(query);
+    const qb = this.enrollments.createQueryBuilder('e');
+    applyEnrollmentFilters(qb, filters);
+    const [items, total] = await qb
+      .orderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
 
     return {
-      items: items.map((row) => this.toDto(row, opts.maskPii)),
+      program: filters.program,
+      items: items.map((row) => this.toDto(row, maskPii)),
       total,
       page,
       limit,
       pageCount: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
+  async exportCsv(query: ParsedEnrollmentListQuery, maskPii = false) {
+    const qb = this.enrollments.createQueryBuilder('e');
+    applyEnrollmentFilters(qb, await this.enrollmentFilters(query));
+    const rows = await qb
+      .orderBy('e.createdAt', 'ASC')
+      .take(ENROLLMENT_EXPORT_ROW_CAP + 1)
+      .getMany();
+    const truncated = rows.length > ENROLLMENT_EXPORT_ROW_CAP;
+    return {
+      csv: enrollmentsToCsv(
+        truncated ? rows.slice(0, ENROLLMENT_EXPORT_ROW_CAP) : rows,
+        maskPii,
+      ),
+      truncated,
     };
   }
 
@@ -420,6 +417,7 @@ export class EnterFirstService {
         email: row.email,
         firstName: row.firstName,
         lastName: row.lastName,
+        program: row.program || CORE_30_PROGRAM,
         tracks: row.tracks,
         amount: row.amount,
         currency: row.currency,
@@ -439,6 +437,43 @@ export class EnterFirstService {
     return `EF-${Date.now()}-${randomInt(100, 999)}`;
   }
 
+  private async enrollmentFilters(query: ParsedEnrollmentListQuery) {
+    const { ids, slugs } = splitTrackTokens(query.trackTokens);
+    const resolved = new Set(slugs);
+    let forceEmpty = query.forceEmpty;
+    if (ids.length) {
+      const rows = await this.courses.findSlugsByIds(ids);
+      const inProgram = rows.filter(
+        (row) => row.program.toLowerCase() === query.program.toLowerCase(),
+      );
+      const found = new Set(inProgram.map((row) => row.id.toLowerCase()));
+      for (const row of inProgram) resolved.add(row.slug);
+      if (
+        ids.some((id) => !found.has(id.toLowerCase())) &&
+        resolved.size === 0
+      ) {
+        forceEmpty = true;
+      }
+    }
+    return {
+      program: query.program,
+      q: query.q,
+      paymentStatuses: query.paymentStatuses,
+      trackSlugs: [...resolved],
+      forceEmpty,
+      isMinor: query.isMinor,
+      dateOfBirth: query.dateOfBirth,
+      dobFrom: query.dobFrom,
+      dobTo: query.dobTo,
+      ageMin: query.ageMin,
+      ageMax: query.ageMax,
+      from: query.from,
+      to: query.to,
+      paidFrom: query.paidFrom,
+      paidTo: query.paidTo,
+    };
+  }
+
   private websiteOrigin() {
     const dedicated = this.config.get('website.url', { infer: true });
     if (dedicated) return dedicated.replace(/\/$/, '');
@@ -453,6 +488,7 @@ export class EnterFirstService {
       paid: row.paymentStatus === 'success',
       amount: row.amount,
       currency: row.currency,
+      program: row.program || CORE_30_PROGRAM,
       tracks: row.tracks,
       enrollmentId: row.id,
       amountMismatch: row.amountMismatch,
@@ -470,6 +506,7 @@ export class EnterFirstService {
       lastName: maskPii ? maskName(row.lastName) : row.lastName,
       email,
       phone,
+      program: row.program || CORE_30_PROGRAM,
       tracks: row.tracks,
       amount: row.amount,
       currency: row.currency,
@@ -501,7 +538,8 @@ export class EnterFirstService {
       consentIp: maskPii ? null : (row.consentIp ?? null),
       consentUserAgent: maskPii ? null : (row.consentUserAgent ?? null),
       ageConfirmed: row.ageConfirmed ?? null,
-      dateOfBirth: maskPii ? null : (row.dateOfBirth ?? null),
+      dateOfBirth: maskPii ? null : dateOnly(row.dateOfBirth),
+      age: maskPii ? null : completedAge(dateOnly(row.dateOfBirth)),
       isMinor: row.isMinor ?? null,
       guardianName: maskPii
         ? maskName(row.guardianName)

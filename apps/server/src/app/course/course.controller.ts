@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -15,6 +16,7 @@ import { PublicEndpointThrottlerGuard } from '../../common/http/public-throttler
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
+import { CORE_30_PROGRAM, resolveProgram } from '../program/core30';
 import { CourseService } from './course.service';
 import {
   ReorderCoursesDto,
@@ -35,10 +37,10 @@ export class CourseController {
     operationId: 'listEnterFirstCourses',
     summary: 'Public Core 3.0 courses',
     description:
-      'Published courses that are free or have a price set. Draft, closed, archived, and paid courses with no price are omitted. The enroll endpoint ignores any client-supplied amount.',
+      'Published Core 3.0 courses loaded from the course table. Only courses created in the compliance dashboard and then published are returned. There is no built-in course list. Draft, closed, archived, and paid courses with no price are omitted. The enroll endpoint ignores any client-supplied amount.',
   })
   listPublic() {
-    return this.courses.listPublic();
+    return this.courses.listPublic(CORE_30_PROGRAM);
   }
 
   @ApiBearerAuth()
@@ -47,9 +49,11 @@ export class CourseController {
   @ApiOperation({
     operationId: 'listAdminCourses',
     summary: 'List courses',
+    description:
+      'Courses stored in the course table for one program. Defaults to Core 3.0. Used for course management and for enrollment or payment course filters. Returns an empty list when no courses have been created. Prices come from each row.',
   })
-  listAdmin() {
-    return this.courses.listAdmin();
+  listAdmin(@Query('program') program?: string) {
+    return this.courses.listAdmin(resolveProgram(program));
   }
 
   @ApiBearerAuth()
