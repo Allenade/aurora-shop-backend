@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,8 +9,14 @@ import { In, Repository } from 'typeorm';
 import { AuditLogType } from '@app/shared';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
+import { UserRepository } from '../user/repositories/user.repository';
 import { CORE_30_PROGRAM } from '../program/core30';
 import { coursesForProgram } from './course-catalogue';
+import {
+  courseDeleteKeepsEnrollments,
+  isSuperAdminRole,
+  roleSlugs,
+} from './course-removal';
 import {
   isEnrollable,
   publishBlockReason,
@@ -34,6 +41,7 @@ export class CourseService {
     @InjectRepository(EnterFirstEnrollmentEntity)
     private readonly enrollments: Repository<EnterFirstEnrollmentEntity>,
     private readonly audit: AuditLogService,
+    private readonly users: UserRepository,
   ) {}
 
   async listPublic(program = CORE_30_PROGRAM) {
@@ -192,12 +200,8 @@ export class CourseService {
 
   async remove(id: string, userId?: string) {
     const row = await this.findOrThrow(id);
-    const count = await this.enrollmentCount(row.slug, row.program);
-    if (row.status !== 'draft' || count > 0) {
-      throw new BadRequestException(
-        'Only draft courses with no enrollments can be deleted',
-      );
-    }
+    const enrollmentCount = await this.enrollmentCount(row.slug, row.program);
+    const decision = courseDeleteKeepsEnrollments(enrollmentCount);
     await this.courses.softRemove(row);
     this.audit.log({
       type: AuditLogType.MUTATION,
@@ -205,8 +209,35 @@ export class CourseService {
       userId,
       resourceType: 'course',
       resourceId: row.id,
+      metadata: {
+        slug: row.slug,
+        status: row.status,
+        enrollmentCount: decision.enrollmentCount,
+      },
     });
-    return { ok: true };
+    return { ok: true, enrollmentCount: decision.enrollmentCount };
+  }
+
+  /**
+   * Soft-deletes every course still in the catalogue.
+   * Enrollment rows are not changed, so each enrollment keeps its course slug.
+   * Nothing is inserted afterwards.
+   */
+  async clearAll(userId?: string) {
+    await this.assertSuperAdmin(userId);
+    const rows = await this.courses.find();
+    if (rows.length > 0) await this.courses.softRemove(rows);
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSES_CLEARED',
+      userId,
+      resourceType: 'course',
+      metadata: {
+        removed: rows.length,
+        slugs: rows.map((row) => row.slug),
+      },
+    });
+    return { ok: true, removed: rows.length };
   }
 
   async archive(id: string, userId?: string) {
@@ -315,6 +346,14 @@ export class CourseService {
     const row = await this.courses.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Course not found');
     return row;
+  }
+
+  private async assertSuperAdmin(userId?: string) {
+    if (!userId) throw new ForbiddenException('Super admin only');
+    const user = await this.users.findByIdWithRoles(userId);
+    if (!isSuperAdminRole(roleSlugs(user?.roleAssignments))) {
+      throw new ForbiddenException('Super admin only');
+    }
   }
 
   private async toPublicDto(row: CourseEntity) {
