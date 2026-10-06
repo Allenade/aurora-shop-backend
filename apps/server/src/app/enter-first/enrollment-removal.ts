@@ -34,3 +34,14 @@ export function enrollmentDeleteDecision(input: {
   }
   return { ok: true };
 }
+
+/** Clear-all has no missing-record case. An empty list still succeeds. */
+export function enrollmentClearDecision(input: {
+  actorId?: string;
+  actorIsSuperAdmin: boolean;
+}): EnrollmentDeleteRefusal | { ok: true } {
+  if (!input.actorId || !input.actorIsSuperAdmin) {
+    return { ok: false, status: 403, message: 'Super admin only' };
+  }
+  return { ok: true };
+}

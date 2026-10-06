@@ -1,6 +1,9 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { enrollmentDeleteDecision } from './enrollment-removal';
+import {
+  enrollmentClearDecision,
+  enrollmentDeleteDecision,
+} from './enrollment-removal';
 
 const actor = '11111111-1111-4111-8111-111111111111';
 
@@ -48,7 +51,7 @@ describe('enrollment payment removal', () => {
     );
     const remove = source.slice(
       source.indexOf('async remove('),
-      source.indexOf('async anonymise('),
+      source.indexOf('async clearAll('),
     );
     const refundAt = remove.indexOf('RefundRequestEntity');
     const enrollmentAt = remove.indexOf(
@@ -70,6 +73,46 @@ describe('enrollment payment removal', () => {
     expect(remove).not.toContain('this.mail');
     expect(remove).not.toContain('.delete(');
     expect(source).not.toMatch(/seed/i);
+  });
+
+  it('refuses clear-all for anyone who is not a super admin', () => {
+    expect(
+      enrollmentClearDecision({
+        actorId: actor,
+        actorIsSuperAdmin: false,
+      }),
+    ).toEqual({ ok: false, status: 403, message: 'Super admin only' });
+    expect(enrollmentClearDecision({ actorIsSuperAdmin: true })).toEqual({
+      ok: false,
+      status: 403,
+      message: 'Super admin only',
+    });
+    expect(
+      enrollmentClearDecision({ actorId: actor, actorIsSuperAdmin: true }),
+    ).toEqual({ ok: true });
+  });
+
+  it('soft-deletes every payments-list enrollment and its refund requests', () => {
+    const source = readFileSync(
+      join(__dirname, 'enter-first.service.ts'),
+      'utf8',
+    );
+    const clear = source.slice(
+      source.indexOf('async clearAll('),
+      source.indexOf('async anonymise('),
+    );
+    const refundAt = clear.indexOf('RefundRequestEntity');
+    const enrollmentAt = clear.indexOf('softDelete(EnterFirstEnrollmentEntity');
+    expect(refundAt).toBeGreaterThan(-1);
+    expect(enrollmentAt).toBeGreaterThan(refundAt);
+    expect(clear).toContain('enrollmentClearDecision');
+    expect(clear).toContain('this.enrollments.find(');
+    expect(clear).toContain('ENROLLMENTS_CLEARED');
+    expect(clear).toContain('softDelete(RefundRequestEntity');
+    expect(clear).not.toContain('this.paystack');
+    expect(clear).not.toContain('this.mail');
+    expect(clear).not.toContain('.delete(');
+    expect(clear).not.toMatch(/seed/i);
   });
 
   it('keeps a soft-deleted row out of the payments list, export, and overview', () => {

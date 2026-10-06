@@ -10,7 +10,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuditLogType, type EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
-import { LessThan, MoreThan, Repository } from 'typeorm';
+import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CourseService } from '../course/course.service';
 import { MailService } from '../mail/mail.service';
@@ -34,6 +34,7 @@ import {
   type ParsedEnrollmentListQuery,
 } from './enrollment-list-filters';
 import {
+  enrollmentClearDecision,
   enrollmentDeleteDecision,
   isSuperAdminRole,
   roleSlugs,
@@ -384,6 +385,42 @@ export class EnterFirstService {
       },
     });
     return { ok: true, id: row.id };
+  }
+
+  /**
+   * Super admin only. Soft-deletes every enrollment on the Payments list.
+   * Refund requests for those enrollments are soft-deleted first so a foreign
+   * key cannot reject the delete. Paystack is not called.
+   */
+  async clearAll(actorId?: string) {
+    const actor = actorId ? await this.users.findByIdWithRoles(actorId) : null;
+    const decision = enrollmentClearDecision({
+      actorId,
+      actorIsSuperAdmin: isSuperAdminRole(roleSlugs(actor?.roleAssignments)),
+    });
+    if (!decision.ok) throw new ForbiddenException(decision.message);
+
+    const rows = await this.enrollments.find({ select: { id: true } });
+    let refundsRemoved = 0;
+    if (rows.length > 0) {
+      const ids = rows.map((row) => row.id);
+      await this.enrollments.manager.transaction(async (manager) => {
+        const refunds = await manager.softDelete(RefundRequestEntity, {
+          enrollmentId: In(ids),
+        });
+        refundsRemoved = refunds.affected ?? 0;
+        await manager.softDelete(EnterFirstEnrollmentEntity, { id: In(ids) });
+      });
+    }
+
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'ENROLLMENTS_CLEARED',
+      userId: actorId,
+      resourceType: 'enrollment',
+      metadata: { removed: rows.length, refundsRemoved },
+    });
+    return { ok: true, removed: rows.length };
   }
 
   async anonymise(row: EnterFirstEnrollmentEntity) {

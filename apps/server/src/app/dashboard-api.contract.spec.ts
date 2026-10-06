@@ -50,6 +50,11 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
     permission: 'LIST enter_first',
   },
   {
+    method: 'Post',
+    path: 'admin/enter-first/enrollments/clear-all',
+    permission: 'MANAGE all',
+  },
+  {
     method: 'Get',
     path: 'admin/enter-first/enrollments/:id',
     permission: 'READ enter_first',

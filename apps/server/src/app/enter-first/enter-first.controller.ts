@@ -81,6 +81,19 @@ export class EnterFirstController {
   }
 
   @ApiBearerAuth()
+  @Post('admin/enter-first/enrollments/clear-all')
+  @RequirePermissions({ action: Action.MANAGE, resource: Resource.ALL })
+  @ApiOperation({
+    operationId: 'clearAllEnterFirstEnrollments',
+    summary: 'Delete every Payments list record',
+    description:
+      'Super admin only. Soft-deletes every enrollment the Payments list can return, in every program, and the refund requests for those enrollments. Cleared rows leave the list, the compliance CSV export, and overview counts. Does not call Paystack. Returns 403 when the caller is not a super admin.',
+  })
+  clearAll(@CurrentUser('sub') userId: string) {
+    return this.enterFirst.clearAll(userId);
+  }
+
+  @ApiBearerAuth()
   @Get('admin/enter-first/enrollments/:id')
   @RequirePermissions({ action: Action.READ, resource: Resource.ENTER_FIRST })
   @ApiOperation({
