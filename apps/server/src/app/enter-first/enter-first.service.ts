@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -7,9 +8,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { EnvTypes } from '@app/shared';
+import { AuditLogType, type EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
-import { LessThan, MoreThan, Repository } from 'typeorm';
+import { In, LessThan, MoreThan, Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { CourseService } from '../course/course.service';
 import { MailService } from '../mail/mail.service';
 import {
@@ -20,6 +22,8 @@ import {
 import { PaystackProvider } from '../payment-gateway/paystack/paystack.provider';
 import { reconcileProviderStatus } from '../payment-gateway/paystack/reconcile-charge';
 import { CORE_30_PROGRAM } from '../program/core30';
+import { RefundRequestEntity } from '../refund/entities/refund-request.entity';
+import { UserRepository } from '../user/repositories/user.repository';
 import { completedAge, dateOnly, isUnder18 } from './age';
 import type { EnterFirstEnrollDto } from './dto/enroll.dto';
 import { enrollmentsToCsv } from './enrollment-csv';
@@ -29,6 +33,12 @@ import {
   splitTrackTokens,
   type ParsedEnrollmentListQuery,
 } from './enrollment-list-filters';
+import {
+  enrollmentClearDecision,
+  enrollmentDeleteDecision,
+  isSuperAdminRole,
+  roleSlugs,
+} from './enrollment-removal';
 import {
   EnterFirstEnrollmentEntity,
   type EnterFirstFormPayload,
@@ -51,6 +61,8 @@ export class EnterFirstService {
     private readonly paystack: PaystackProvider,
     private readonly mail: MailService,
     private readonly config: ConfigService<EnvTypes, true>,
+    private readonly audit: AuditLogService,
+    private readonly users: UserRepository,
   ) {}
 
   async enroll(dto: EnterFirstEnrollDto, meta: EnrollRequestMeta = {}) {
@@ -327,6 +339,88 @@ export class EnterFirstService {
     const row = await this.enrollments.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Enrollment not found');
     return this.toDto(row, maskPii);
+  }
+
+  /**
+   * Super admin only. Soft-deletes one Payments-list enrollment.
+   * Refund requests for that enrollment are soft-deleted first so a foreign
+   * key cannot reject the delete. Paystack is not called.
+   */
+  async remove(id: string, actorId?: string) {
+    const actor = actorId ? await this.users.findByIdWithRoles(actorId) : null;
+    const row = await this.enrollments.findOne({ where: { id } });
+    const decision = enrollmentDeleteDecision({
+      actorId,
+      actorIsSuperAdmin: isSuperAdminRole(roleSlugs(actor?.roleAssignments)),
+      targetExists: Boolean(row),
+    });
+    if (!decision.ok) {
+      if (decision.status === 404) {
+        throw new NotFoundException(decision.message);
+      }
+      throw new ForbiddenException(decision.message);
+    }
+    if (!row) throw new NotFoundException('Enrollment not found');
+
+    let refundsRemoved = 0;
+    await this.enrollments.manager.transaction(async (manager) => {
+      const refunds = await manager.softDelete(RefundRequestEntity, {
+        enrollmentId: row.id,
+      });
+      refundsRemoved = refunds.affected ?? 0;
+      await manager.softDelete(EnterFirstEnrollmentEntity, row.id);
+    });
+
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'ENROLLMENT_DELETED',
+      userId: actorId,
+      resourceType: 'enrollment',
+      resourceId: row.id,
+      metadata: {
+        program: row.program,
+        paymentStatus: row.paymentStatus,
+        paystackReference: row.paystackReference ?? null,
+        refundsRemoved,
+      },
+    });
+    return { ok: true, id: row.id };
+  }
+
+  /**
+   * Super admin only. Soft-deletes every enrollment on the Payments list.
+   * Refund requests for those enrollments are soft-deleted first so a foreign
+   * key cannot reject the delete. Paystack is not called.
+   */
+  async clearAll(actorId?: string) {
+    const actor = actorId ? await this.users.findByIdWithRoles(actorId) : null;
+    const decision = enrollmentClearDecision({
+      actorId,
+      actorIsSuperAdmin: isSuperAdminRole(roleSlugs(actor?.roleAssignments)),
+    });
+    if (!decision.ok) throw new ForbiddenException(decision.message);
+
+    const rows = await this.enrollments.find({ select: { id: true } });
+    let refundsRemoved = 0;
+    if (rows.length > 0) {
+      const ids = rows.map((row) => row.id);
+      await this.enrollments.manager.transaction(async (manager) => {
+        const refunds = await manager.softDelete(RefundRequestEntity, {
+          enrollmentId: In(ids),
+        });
+        refundsRemoved = refunds.affected ?? 0;
+        await manager.softDelete(EnterFirstEnrollmentEntity, { id: In(ids) });
+      });
+    }
+
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'ENROLLMENTS_CLEARED',
+      userId: actorId,
+      resourceType: 'enrollment',
+      metadata: { removed: rows.length, refundsRemoved },
+    });
+    return { ok: true, removed: rows.length };
   }
 
   async anonymise(row: EnterFirstEnrollmentEntity) {

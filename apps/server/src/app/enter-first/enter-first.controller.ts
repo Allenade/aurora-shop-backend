@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -80,6 +81,19 @@ export class EnterFirstController {
   }
 
   @ApiBearerAuth()
+  @Post('admin/enter-first/enrollments/clear-all')
+  @RequirePermissions({ action: Action.MANAGE, resource: Resource.ALL })
+  @ApiOperation({
+    operationId: 'clearAllEnterFirstEnrollments',
+    summary: 'Delete every Payments list record',
+    description:
+      'Super admin only. Soft-deletes every enrollment the Payments list can return, in every program, and the refund requests for those enrollments. Cleared rows leave the list, the compliance CSV export, and overview counts. Does not call Paystack. Returns 403 when the caller is not a super admin.',
+  })
+  clearAll(@CurrentUser('sub') userId: string) {
+    return this.enterFirst.clearAll(userId);
+  }
+
+  @ApiBearerAuth()
   @Get('admin/enter-first/enrollments/:id')
   @RequirePermissions({ action: Action.READ, resource: Resource.ENTER_FIRST })
   @ApiOperation({
@@ -91,5 +105,18 @@ export class EnterFirstController {
   async get(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
     return this.enterFirst.getById(id, maskPii);
+  }
+
+  @ApiBearerAuth()
+  @Delete('admin/enter-first/enrollments/:id')
+  @RequirePermissions({ action: Action.MANAGE, resource: Resource.ALL })
+  @ApiOperation({
+    operationId: 'deleteEnterFirstEnrollment',
+    summary: 'Delete a Payments list record',
+    description:
+      'Super admin only. The id is the enrollment id returned by GET /admin/enter-first/enrollments (field id). Soft-deletes that enrollment and its refund requests. The row leaves the Payments list, the compliance CSV export, and overview counts. Does not call Paystack. Returns 404 when the record does not exist and 403 when the caller is not a super admin.',
+  })
+  remove(@Param('id') id: string, @CurrentUser('sub') userId: string) {
+    return this.enterFirst.remove(id, userId);
   }
 }
