@@ -8,6 +8,7 @@ import { EnrollmentColumnAlign1735689800000 } from './migrations/1735689800000-E
 import { RemoveSeededRows1735689900000 } from './migrations/1735689900000-RemoveSeededRows';
 import { AuditLogColumns1735690000000 } from './migrations/1735690000000-AuditLogColumns';
 import { Core30Program1735690100000 } from './migrations/1735690100000-Core30Program';
+import { CourseSlugReuse1735690200000 } from './migrations/1735690200000-CourseSlugReuse';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { Core30Program1735690100000 } from './migrations/1735690100000-Core30Pro
             RemoveSeededRows1735689900000,
             AuditLogColumns1735690000000,
             Core30Program1735690100000,
+            CourseSlugReuse1735690200000,
           ],
           migrationsRun: true,
           logging: false,

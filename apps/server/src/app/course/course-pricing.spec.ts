@@ -31,7 +31,7 @@ describe('course pricing', () => {
     if (quote.ok) expect(quote.amount).toBe(65_000);
   });
 
-  it('rejects unknown, closed, full, and past-cutoff courses', () => {
+  it('rejects unknown, closed, full, and cutoff courses as closed', () => {
     expect(quoteCourses(['nope'], [course()]).ok).toBe(false);
     expect(quoteCourses(['iot'], [course({ status: 'closed' })]).ok).toBe(
       false,
@@ -39,13 +39,13 @@ describe('course pricing', () => {
     expect(
       quoteCourses(['iot'], [course({ seatCap: 1, seatsTaken: 1 })]).ok,
     ).toBe(false);
-    expect(
-      quoteCourses(
-        ['iot'],
-        [course({ enrollmentCutoff: new Date('2020-01-01T00:00:00Z') })],
-        new Date('2026-01-01T00:00:00Z'),
-      ).ok,
-    ).toBe(false);
+    const pastCutoff = quoteCourses(
+      ['iot'],
+      [course({ enrollmentCutoff: new Date('2020-01-01T00:00:00Z') })],
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(pastCutoff.ok).toBe(false);
+    if (!pastCutoff.ok) expect(pastCutoff.error).toBe('Course iot is closed');
   });
 
   it('rejects unpublished courses and paid courses with no price', () => {

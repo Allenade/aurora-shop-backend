@@ -31,6 +31,11 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
     path: 'admin/courses/reorder',
     permission: 'UPDATE course',
   },
+  {
+    method: 'Post',
+    path: 'admin/courses/clear-all',
+    permission: 'MANAGE all',
+  },
   { method: 'Get', path: 'admin/courses/:id', permission: 'READ course' },
   { method: 'Patch', path: 'admin/courses/:id', permission: 'UPDATE course' },
   {
