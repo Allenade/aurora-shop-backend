@@ -1,10 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { UserStatus } from '@app/shared';
-import { Repository } from 'typeorm';
+import { AuditLogType, UserStatus } from '@app/shared';
+import { IsNull, Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { RefreshTokenEntity } from '../auth/entities/refresh-token.entity';
+import { CartItemEntity } from '../cart/entities/cart-item.entity';
+import { SUPER_ADMIN_ROLE } from '../course/course-removal';
 import { OrderEntity } from '../order/entities/order.entity';
+import { UserRoleEntity } from '../role/entities/user-role.entity';
 import { UserEntity } from './entities/user.entity';
 import { UserRepository } from './repositories/user.repository';
+import {
+  isSuperAdminRole,
+  roleSlugs,
+  userDeleteDecision,
+} from './user-removal';
 
 @Injectable()
 export class UserService {
@@ -14,6 +28,9 @@ export class UserService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(OrderEntity)
     private readonly orders: Repository<OrderEntity>,
+    @InjectRepository(UserRoleEntity)
+    private readonly assignments: Repository<UserRoleEntity>,
+    private readonly audit: AuditLogService,
   ) {}
 
   async list(query?: {
@@ -122,5 +139,70 @@ export class UserService {
     user.status = status;
     await this.users.save(user);
     return { ok: true, id, status };
+  }
+
+  /**
+   * Super admin only. Soft-deletes the user. Sessions and role rows are
+   * soft-removed and the cart is cleared so a later hard delete cannot
+   * fail on those foreign keys. Orders, payments, quotes, audit rows, and
+   * course enrollments stay.
+   */
+  async remove(targetId: string, actorId?: string) {
+    const actor = actorId ? await this.users.findByIdWithRoles(actorId) : null;
+    const target = await this.userRepo.findOne({
+      where: { id: targetId },
+      relations: { roleAssignments: { role: true } },
+    });
+    const superAdminCount = await this.countSuperAdmins();
+    const decision = userDeleteDecision({
+      actorId,
+      actorIsSuperAdmin: isSuperAdminRole(roleSlugs(actor?.roleAssignments)),
+      targetExists: Boolean(target),
+      targetId,
+      targetIsSuperAdmin: isSuperAdminRole(roleSlugs(target?.roleAssignments)),
+      superAdminCount,
+    });
+    if (!decision.ok) {
+      if (decision.status === 404)
+        throw new NotFoundException(decision.message);
+      throw new ForbiddenException(decision.message);
+    }
+    if (!target) throw new NotFoundException('User not found');
+
+    await this.userRepo.manager.transaction(async (manager) => {
+      const still = await this.countSuperAdmins(manager);
+      if (isSuperAdminRole(roleSlugs(target.roleAssignments)) && still <= 1) {
+        throw new ForbiddenException('Cannot delete the last super admin');
+      }
+      await manager.update(
+        RefreshTokenEntity,
+        { userId: target.id, revokedAt: IsNull() },
+        { revokedAt: new Date() },
+      );
+      await manager.softDelete(RefreshTokenEntity, { userId: target.id });
+      await manager.softDelete(UserRoleEntity, { userId: target.id });
+      await manager.delete(CartItemEntity, { userId: target.id });
+      await manager.softDelete(UserEntity, target.id);
+    });
+
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'USER_DELETED',
+      userId: actorId,
+      resourceType: 'user',
+      resourceId: target.id,
+    });
+    return { ok: true, id: target.id };
+  }
+
+  private async countSuperAdmins(manager = this.assignments.manager) {
+    const raw = await manager
+      .createQueryBuilder(UserRoleEntity, 'assignment')
+      .innerJoin('assignment.user', 'user')
+      .innerJoin('assignment.role', 'role')
+      .where('role.slug = :slug', { slug: SUPER_ADMIN_ROLE })
+      .select('COUNT(DISTINCT user.id)', 'count')
+      .getRawOne<{ count: string }>();
+    return Number(raw?.count) || 0;
   }
 }

@@ -9,6 +9,7 @@ import { RemoveSeededRows1735689900000 } from './migrations/1735689900000-Remove
 import { AuditLogColumns1735690000000 } from './migrations/1735690000000-AuditLogColumns';
 import { Core30Program1735690100000 } from './migrations/1735690100000-Core30Program';
 import { CourseSlugReuse1735690200000 } from './migrations/1735690200000-CourseSlugReuse';
+import { CoursePriceHistoryCascade1735690300000 } from './migrations/1735690300000-CoursePriceHistoryCascade';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { CourseSlugReuse1735690200000 } from './migrations/1735690200000-CourseS
             AuditLogColumns1735690000000,
             Core30Program1735690100000,
             CourseSlugReuse1735690200000,
+            CoursePriceHistoryCascade1735690300000,
           ],
           migrationsRun: true,
           logging: false,

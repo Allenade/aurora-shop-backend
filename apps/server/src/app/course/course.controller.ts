@@ -74,7 +74,7 @@ export class CourseController {
     operationId: 'clearAllCourses',
     summary: 'Soft-delete every course',
     description:
-      'Super admin only. Soft-deletes every course in the catalogue. Enrollment rows are left in place and still store each course slug. Does not create or seed courses.',
+      'Super admin only. Soft-deletes every course in the catalogue, including courses people have paid for. Price history is soft-removed with each course. Enrollment and payment rows are left in place and still store each course slug. Does not create or seed courses and does not refund payments.',
   })
   clearAll(@CurrentUser('sub') userId: string) {
     return this.courses.clearAll(userId);
@@ -140,7 +140,7 @@ export class CourseController {
     operationId: 'deleteCourse',
     summary: 'Delete course',
     description:
-      'Soft-deletes the course in any status, including when it already has enrollments. Enrollment rows are kept and still store the course slug. The course leaves the catalogue.',
+      'Soft-deletes the course in any status, including when people have paid or registered. Price history is soft-removed with the course. Enrollment and payment rows are kept and still store the course slug. Nothing is refunded. The course leaves the catalogue.',
   })
   remove(@Param('id') id: string, @CurrentUser('sub') userId: string) {
     return this.courses.remove(id, userId);

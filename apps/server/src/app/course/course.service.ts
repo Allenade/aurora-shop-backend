@@ -202,7 +202,7 @@ export class CourseService {
     const row = await this.findOrThrow(id);
     const enrollmentCount = await this.enrollmentCount(row.slug, row.program);
     const decision = courseDeleteKeepsEnrollments(enrollmentCount);
-    await this.courses.softRemove(row);
+    await this.softRemoveCourses([row]);
     this.audit.log({
       type: AuditLogType.MUTATION,
       action: 'COURSE_DELETED',
@@ -213,6 +213,7 @@ export class CourseService {
         slug: row.slug,
         status: row.status,
         enrollmentCount: decision.enrollmentCount,
+        keepPayments: decision.keepPayments,
       },
     });
     return { ok: true, enrollmentCount: decision.enrollmentCount };
@@ -220,13 +221,14 @@ export class CourseService {
 
   /**
    * Soft-deletes every course still in the catalogue.
-   * Enrollment rows are not changed, so each enrollment keeps its course slug.
-   * Nothing is inserted afterwards.
+   * Price history is soft-removed first. Enrollment and payment rows are
+   * not changed, so each enrollment keeps its course slug. Nothing is
+   * inserted afterwards.
    */
   async clearAll(userId?: string) {
     await this.assertSuperAdmin(userId);
     const rows = await this.courses.find();
-    if (rows.length > 0) await this.courses.softRemove(rows);
+    await this.softRemoveCourses(rows);
     this.audit.log({
       type: AuditLogType.MUTATION,
       action: 'COURSES_CLEARED',
@@ -330,6 +332,23 @@ export class CourseService {
         track: JSON.stringify([slug]),
       })
       .getCount();
+  }
+
+  /**
+   * Price history is the only table with a course_id foreign key.
+   * Soft-remove it before the course. Paid enrollments, refunds, and
+   * registrations stay: they reference the course slug, not course.id.
+   */
+  private async softRemoveCourses(rows: CourseEntity[]) {
+    if (rows.length === 0) return;
+    const ids = rows.map((row) => row.id);
+    await this.courses.manager.transaction(async (manager) => {
+      const history = await manager.find(CoursePriceHistoryEntity, {
+        where: { courseId: In(ids) },
+      });
+      if (history.length > 0) await manager.softRemove(history);
+      await manager.softRemove(rows);
+    });
   }
 
   private async coursesInProgram(program: string) {
