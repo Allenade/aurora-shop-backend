@@ -68,6 +68,19 @@ export class CourseController {
   }
 
   @ApiBearerAuth()
+  @Post('admin/courses/clear-all')
+  @RequirePermissions({ action: Action.MANAGE, resource: Resource.ALL })
+  @ApiOperation({
+    operationId: 'clearAllCourses',
+    summary: 'Soft-delete every course',
+    description:
+      'Super admin only. Soft-deletes every course in the catalogue. Enrollment rows are left in place and still store each course slug. Does not create or seed courses.',
+  })
+  clearAll(@CurrentUser('sub') userId: string) {
+    return this.courses.clearAll(userId);
+  }
+
+  @ApiBearerAuth()
   @Post('admin/courses')
   @RequirePermissions({ action: Action.CREATE, resource: Resource.COURSE })
   @ApiOperation({
@@ -125,8 +138,9 @@ export class CourseController {
   @RequirePermissions({ action: Action.DELETE, resource: Resource.COURSE })
   @ApiOperation({
     operationId: 'deleteCourse',
-    summary: 'Delete draft course',
-    description: 'Only drafts with zero enrollments can be deleted.',
+    summary: 'Delete course',
+    description:
+      'Soft-deletes the course in any status, including when it already has enrollments. Enrollment rows are kept and still store the course slug. The course leaves the catalogue.',
   })
   remove(@Param('id') id: string, @CurrentUser('sub') userId: string) {
     return this.courses.remove(id, userId);

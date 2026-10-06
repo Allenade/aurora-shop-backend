@@ -82,7 +82,7 @@ export function quoteCourses(
     ) {
       return {
         ok: false,
-        error: `Enrollment for ${course.slug} is past the cutoff`,
+        error: `Course ${course.slug} is closed`,
       };
     }
     if (

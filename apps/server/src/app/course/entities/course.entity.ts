@@ -5,9 +5,12 @@ import type { CourseStatus } from '../course-pricing';
 import { CoursePriceHistoryEntity } from './course-price-history.entity';
 
 @Entity('course')
+@Index('IDX_course_slug', ['slug'], {
+  unique: true,
+  where: '"deleted_at" IS NULL',
+})
 @WithTimestamps()
 export class CourseEntity extends DatabaseEntity {
-  @Index({ unique: true })
   @Column({ length: 40 })
   slug: string;
 
