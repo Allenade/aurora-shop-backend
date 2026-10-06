@@ -17,6 +17,7 @@ const CONTROLLERS = [
   'email/email.controller.ts',
   'audit-log/audit-log.controller.ts',
   'org-settings/org-settings.controller.ts',
+  'user/admin-user.controller.ts',
 ];
 
 const DASHBOARD_ROUTES: ExpectedRoute[] = [
@@ -218,6 +219,7 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
     path: 'admin/settings/organization',
     permission: 'MANAGE settings',
   },
+  { method: 'Delete', path: 'admin/users/:id', permission: 'MANAGE all' },
 ];
 
 function joinPath(prefix: string, path: string) {

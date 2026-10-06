@@ -36,6 +36,8 @@ describe('compliance roles', () => {
     expect(allows(grants, Action.DELETE, Resource.EMAIL)).toBe(false);
     expect(allows(grants, Action.CREATE, Resource.COMPLIANCE)).toBe(true);
     expect(allows(grants, Action.UPDATE, Resource.COURSE)).toBe(false);
+    expect(allows(grants, Action.DELETE, Resource.USER)).toBe(false);
+    expect(allows(grants, Action.MANAGE, Resource.ALL)).toBe(false);
     expect(allows(grants, Action.MANAGE, Resource.SETTINGS)).toBe(false);
     expect(allows(grants, Action.DELETE, Resource.ENTER_FIRST)).toBe(false);
     expect(allows(grants, Action.MANAGE, Resource.ALL)).toBe(false);
@@ -46,6 +48,8 @@ describe('compliance roles', () => {
     expect(allows(grants, Action.DELETE, Resource.COURSE)).toBe(true);
     expect(allows(grants, Action.DELETE, Resource.ENTER_FIRST)).toBe(true);
     expect(allows(grants, Action.MANAGE, Resource.SETTINGS)).toBe(true);
+    expect(allows(grants, Action.MANAGE, Resource.ALL)).toBe(true);
+    expect(allows(grants, Action.DELETE, Resource.USER)).toBe(true);
     expect(allows(grants, Action.UPDATE, Resource.USER)).toBe(true);
     expect(allows(grants, Action.CREATE, Resource.EMAIL)).toBe(true);
   });
