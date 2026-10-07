@@ -46,6 +46,41 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
   },
   { method: 'Delete', path: 'admin/courses/:id', permission: 'DELETE course' },
   {
+    method: 'Post',
+    path: 'admin/courses/:id/image',
+    permission: 'UPDATE course',
+  },
+  {
+    method: 'Delete',
+    path: 'admin/courses/:id/image',
+    permission: 'UPDATE course',
+  },
+  {
+    method: 'Post',
+    path: 'admin/courses/:id/syllabus',
+    permission: 'UPDATE course',
+  },
+  {
+    method: 'Delete',
+    path: 'admin/courses/:id/syllabus/file',
+    permission: 'UPDATE course',
+  },
+  {
+    method: 'Patch',
+    path: 'admin/courses/:id/syllabus/text',
+    permission: 'UPDATE course',
+  },
+  {
+    method: 'Delete',
+    path: 'admin/courses/:id/syllabus/text',
+    permission: 'UPDATE course',
+  },
+  {
+    method: 'Delete',
+    path: 'admin/courses/:id/syllabus',
+    permission: 'UPDATE course',
+  },
+  {
     method: 'Get',
     path: 'admin/enter-first/enrollments',
     permission: 'LIST enter_first',

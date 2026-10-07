@@ -60,6 +60,32 @@ export class CourseEntity extends DatabaseEntity {
   @Column({ type: 'varchar', length: 80, nullable: true })
   cohort?: string | null;
 
+  /** Public URL of the course picture on Cloudflare R2. Null until an admin uploads one. */
+  @Column({ name: 'image_url', type: 'varchar', length: 2048, nullable: true })
+  imageUrl?: string | null;
+
+  /** Public URL of the optional syllabus PDF on Cloudflare R2. */
+  @Column({
+    name: 'syllabus_url',
+    type: 'varchar',
+    length: 2048,
+    nullable: true,
+  })
+  syllabusUrl?: string | null;
+
+  /** Original file name of the syllabus PDF, for the dashboard download label. */
+  @Column({
+    name: 'syllabus_filename',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  syllabusFilename?: string | null;
+
+  /** Optional rich text (sanitized HTML), such as week-by-week topics. */
+  @Column({ name: 'syllabus_text', type: 'text', nullable: true })
+  syllabusText?: string | null;
+
   @OneToMany(() => CoursePriceHistoryEntity, (row) => row.course)
   priceHistory?: CoursePriceHistoryEntity[];
 }
