@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
+import { StorageModule } from '../storage/storage.module';
 import { UserModule } from '../user/user.module';
 import { CourseController } from './course.controller';
 import { CourseService } from './course.service';
@@ -15,6 +16,7 @@ import { CourseEntity } from './entities/course.entity';
       EnterFirstEnrollmentEntity,
     ]),
     UserModule,
+    StorageModule,
   ],
   controllers: [CourseController],
   providers: [CourseService],
