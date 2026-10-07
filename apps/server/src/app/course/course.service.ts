@@ -11,7 +11,18 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
 import { UserRepository } from '../user/repositories/user.repository';
 import { CORE_30_PROGRAM } from '../program/core30';
+import {
+  StorageService,
+  type FileUploadPayload,
+} from '../storage/storage.service';
 import { coursesForProgram } from './course-catalogue';
+import {
+  CourseMediaError,
+  courseMediaFields,
+  normalizeSyllabusText,
+  prepareCourseImage,
+  prepareCourseSyllabusPdf,
+} from './course-media';
 import {
   courseDeleteKeepsEnrollments,
   isSuperAdminRole,
@@ -42,6 +53,7 @@ export class CourseService {
     private readonly enrollments: Repository<EnterFirstEnrollmentEntity>,
     private readonly audit: AuditLogService,
     private readonly users: UserRepository,
+    private readonly storage: StorageService,
   ) {}
 
   async listPublic(program = CORE_30_PROGRAM) {
@@ -56,6 +68,23 @@ export class CourseService {
         }),
     );
     return Promise.all(enrollable.map((row) => this.toPublicDto(row)));
+  }
+
+  async getPublic(slug: string, program = CORE_30_PROGRAM) {
+    const key = slug.trim().toLowerCase();
+    const rows = await this.coursesInProgram(program);
+    const row = rows.find((item) => item.slug === key);
+    if (
+      !row ||
+      !isEnrollable({
+        status: row.status,
+        isFree: row.isFree,
+        price: row.price,
+      })
+    ) {
+      throw new NotFoundException('Course not found');
+    }
+    return this.toPublicDto(row);
   }
 
   async listAdmin(program = CORE_30_PROGRAM) {
@@ -280,6 +309,130 @@ export class CourseService {
     return this.listAdmin();
   }
 
+  async setImage(
+    id: string,
+    file: FileUploadPayload | undefined,
+    userId?: string,
+  ) {
+    const row = await this.findOrThrow(id);
+    const prepared = await fromMedia(() => prepareCourseImage(file));
+    const uploaded = await this.storage.uploadFile(prepared, 'courses/images');
+    const previous = row.imageUrl ?? null;
+    row.imageUrl = uploaded.publicUrl;
+    await this.courses.save(row);
+    if (previous && previous !== uploaded.publicUrl) {
+      await this.storage.deleteByPublicUrl(previous);
+    }
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSE_IMAGE_SET',
+      userId,
+      resourceType: 'course',
+      resourceId: row.id,
+    });
+    return this.toAdminDto(row);
+  }
+
+  async clearImage(id: string, userId?: string) {
+    const row = await this.findOrThrow(id);
+    const previous = row.imageUrl ?? null;
+    row.imageUrl = null;
+    await this.courses.save(row);
+    await this.storage.deleteByPublicUrl(previous);
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSE_IMAGE_CLEARED',
+      userId,
+      resourceType: 'course',
+      resourceId: row.id,
+    });
+    return this.toAdminDto(row);
+  }
+
+  async setSyllabusFile(
+    id: string,
+    file: FileUploadPayload | undefined,
+    userId?: string,
+  ) {
+    const row = await this.findOrThrow(id);
+    const prepared = await fromMedia(() => prepareCourseSyllabusPdf(file));
+    const uploaded = await this.storage.uploadFile(prepared, 'courses/syllabi');
+    const previous = row.syllabusUrl ?? null;
+    row.syllabusUrl = uploaded.publicUrl;
+    row.syllabusFilename = prepared.originalname;
+    await this.courses.save(row);
+    if (previous && previous !== uploaded.publicUrl) {
+      await this.storage.deleteByPublicUrl(previous);
+    }
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSE_SYLLABUS_FILE_SET',
+      userId,
+      resourceType: 'course',
+      resourceId: row.id,
+    });
+    return this.toAdminDto(row);
+  }
+
+  async clearSyllabusFile(id: string, userId?: string) {
+    const row = await this.findOrThrow(id);
+    const previous = row.syllabusUrl ?? null;
+    row.syllabusUrl = null;
+    row.syllabusFilename = null;
+    await this.courses.save(row);
+    await this.storage.deleteByPublicUrl(previous);
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSE_SYLLABUS_FILE_CLEARED',
+      userId,
+      resourceType: 'course',
+      resourceId: row.id,
+    });
+    return this.toAdminDto(row);
+  }
+
+  async setSyllabusText(
+    id: string,
+    text: string | null | undefined,
+    userId?: string,
+  ) {
+    const row = await this.findOrThrow(id);
+    row.syllabusText = await fromMedia(() => normalizeSyllabusText(text));
+    await this.courses.save(row);
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSE_SYLLABUS_TEXT_SET',
+      userId,
+      resourceType: 'course',
+      resourceId: row.id,
+      metadata: { cleared: row.syllabusText == null },
+    });
+    return this.toAdminDto(row);
+  }
+
+  async clearSyllabusText(id: string, userId?: string) {
+    return this.setSyllabusText(id, null, userId);
+  }
+
+  /** Removes the PDF and the rich text. The course row stays. */
+  async clearSyllabus(id: string, userId?: string) {
+    const row = await this.findOrThrow(id);
+    const previous = row.syllabusUrl ?? null;
+    row.syllabusUrl = null;
+    row.syllabusFilename = null;
+    row.syllabusText = null;
+    await this.courses.save(row);
+    await this.storage.deleteByPublicUrl(previous);
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'COURSE_SYLLABUS_CLEARED',
+      userId,
+      resourceType: 'course',
+      resourceId: row.id,
+    });
+    return this.toAdminDto(row);
+  }
+
   async quote(slugs: string[], now = new Date()) {
     const rows = await this.coursesInProgram(CORE_30_PROGRAM);
     const priced: PricedCourse[] = [];
@@ -349,6 +502,17 @@ export class CourseService {
       if (history.length > 0) await manager.softRemove(history);
       await manager.softRemove(rows);
     });
+    await this.deleteStoredMedia(rows);
+  }
+
+  /** Best-effort. A storage failure must not block course deletion. */
+  private async deleteStoredMedia(rows: CourseEntity[]) {
+    await Promise.all(
+      rows.flatMap((row) => [
+        this.storage.deleteByPublicUrl(row.imageUrl).catch(() => undefined),
+        this.storage.deleteByPublicUrl(row.syllabusUrl).catch(() => undefined),
+      ]),
+    );
   }
 
   private async coursesInProgram(program: string) {
@@ -396,6 +560,7 @@ export class CourseService {
       status: row.status,
       sortOrder: row.sortOrder,
       cohort: row.cohort ?? null,
+      ...courseMediaFields(row),
     };
   }
 
@@ -406,6 +571,17 @@ export class CourseService {
       createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
       updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
     };
+  }
+}
+
+async function fromMedia<T>(work: () => Promise<T> | T): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    if (err instanceof CourseMediaError) {
+      throw new BadRequestException(err.message);
+    }
+    throw err;
   }
 }
 

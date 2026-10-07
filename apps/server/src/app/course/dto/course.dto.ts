@@ -11,7 +11,9 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { COURSE_SYLLABUS_TEXT_MAX_CHARS } from '../course-media';
 import type { CourseStatus } from '../course-pricing';
 
 const STATUSES: CourseStatus[] = ['draft', 'open', 'closed', 'archived'];
@@ -169,6 +171,18 @@ export class UpdateCourseDto {
   @IsOptional()
   @ApiPropertyOptional()
   cohort?: string | null;
+}
+
+export class UpdateCourseSyllabusTextDto {
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(COURSE_SYLLABUS_TEXT_MAX_CHARS)
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Sanitized HTML for week-by-week topics. Null or blank clears the text and leaves any PDF in place.',
+  })
+  text!: string | null;
 }
 
 export class ReorderCoursesDto {

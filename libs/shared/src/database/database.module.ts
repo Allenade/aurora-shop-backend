@@ -10,6 +10,7 @@ import { AuditLogColumns1735690000000 } from './migrations/1735690000000-AuditLo
 import { Core30Program1735690100000 } from './migrations/1735690100000-Core30Program';
 import { CourseSlugReuse1735690200000 } from './migrations/1735690200000-CourseSlugReuse';
 import { CoursePriceHistoryCascade1735690300000 } from './migrations/1735690300000-CoursePriceHistoryCascade';
+import { CourseImageSyllabus1735690400000 } from './migrations/1735690400000-CourseImageSyllabus';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { CoursePriceHistoryCascade1735690300000 } from './migrations/17356903000
             Core30Program1735690100000,
             CourseSlugReuse1735690200000,
             CoursePriceHistoryCascade1735690300000,
+            CourseImageSyllabus1735690400000,
           ],
           migrationsRun: true,
           logging: false,
