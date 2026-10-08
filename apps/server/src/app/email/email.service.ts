@@ -29,6 +29,7 @@ import {
 import {
   dedupeComposeRecipients,
   parseSelectors,
+  toCourseStudents,
   type ComposeCandidate,
   type ParsedSelector,
 } from './recipient-selectors';
@@ -971,6 +972,14 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
         courses: person.courses,
       })),
     };
+  }
+
+  async listCourseStudents(courseId: string) {
+    const resolved = await this.resolveSelectors(
+      [`course:${courseId.trim()}`],
+      'transactional',
+    );
+    return toCourseStudents(resolved.recipients);
   }
 
   async searchStudents(q: string, limitRaw?: string) {
