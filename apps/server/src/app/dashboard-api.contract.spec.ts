@@ -209,6 +209,11 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
     path: 'admin/emails/students/search',
     permission: 'READ email',
   },
+  {
+    method: 'Get',
+    path: 'admin/emails/courses/:courseId/students',
+    permission: 'READ email',
+  },
   { method: 'Get', path: 'admin/emails/drafts', permission: 'LIST email' },
   { method: 'Post', path: 'admin/emails/drafts', permission: 'CREATE email' },
   {
