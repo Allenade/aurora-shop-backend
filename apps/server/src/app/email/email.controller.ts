@@ -145,6 +145,19 @@ export class EmailController {
   }
 
   @ApiBearerAuth()
+  @Get('admin/emails/courses/:courseId/students')
+  @RequirePermissions({ action: Action.READ, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'listCourseStudents',
+    summary: 'People who paid for a course',
+    description:
+      'Resolves course:<courseId> the same way a send does: paid enrollments only, one row per email, sorted by name.',
+  })
+  listCourseStudents(@Param('courseId') courseId: string) {
+    return this.emails.listCourseStudents(courseId);
+  }
+
+  @ApiBearerAuth()
   @Get('admin/emails/drafts')
   @RequirePermissions({ action: Action.LIST, resource: Resource.EMAIL })
   @ApiOperation({ operationId: 'listEmailDrafts', summary: 'List drafts' })

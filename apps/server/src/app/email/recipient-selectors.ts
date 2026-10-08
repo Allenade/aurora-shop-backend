@@ -15,6 +15,12 @@ export type ComposeCandidate = {
   marketingOptIn: boolean;
 };
 
+export type CourseStudentItem = {
+  enrollmentId: string;
+  name: string;
+  email: string;
+};
+
 const AGE_MAX = 130;
 
 export function parseAgeGroup(
@@ -110,6 +116,30 @@ export function dedupeComposeRecipients(
     }
   }
   return [...byEmail.values()];
+}
+
+export function toCourseStudents(recipients: ComposeCandidate[]): {
+  count: number;
+  items: CourseStudentItem[];
+} {
+  const items = recipients
+    .flatMap((person) =>
+      person.enrollmentId
+        ? [
+            {
+              enrollmentId: person.enrollmentId,
+              name: person.name,
+              email: person.email,
+            },
+          ]
+        : [],
+    )
+    .sort(
+      (left, right) =>
+        left.name.localeCompare(right.name, 'en', { sensitivity: 'base' }) ||
+        left.email.localeCompare(right.email),
+    );
+  return { count: items.length, items };
 }
 
 function uniqueCourses(courses: string[]): string[] {
