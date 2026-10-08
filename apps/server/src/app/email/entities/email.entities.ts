@@ -13,6 +13,7 @@ export type EmailMessageStatus =
 
 export type EmailCampaignStatus =
   | 'draft'
+  | 'scheduled'
   | 'queued'
   | 'sending'
   | 'paused'
@@ -107,6 +108,13 @@ export class EmailCampaignEntity extends DatabaseEntity {
 
   @Column({ type: 'jsonb', default: [] })
   attachments: EmailAttachment[];
+
+  /** Compose selectors: allPaid, course:<id>, ageGroup:<range>, student:<id|email>. */
+  @Column({ type: 'jsonb', default: [] })
+  selectors: string[] = [];
+
+  @Column({ name: 'scheduled_at', type: 'timestamptz', nullable: true })
+  scheduledAt?: Date | null;
 }
 
 @Entity('email_message')

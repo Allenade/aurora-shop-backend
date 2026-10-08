@@ -10,10 +10,12 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuditLogType, type EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
-import { In, LessThan, MoreThan, Repository } from 'typeorm';
+import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CourseService } from '../course/course.service';
-import { MailService } from '../mail/mail.service';
+import { EmailService } from '../email/email.service';
+import { ADVISORY_LOCK, withAdvisoryLock } from '../../common/db/advisory-lock';
+import { queryRows } from '../../common/db/query-rows';
 import {
   TransactionStatus,
   type CallbackOutcome,
@@ -59,10 +61,11 @@ export class EnterFirstService {
     private readonly enrollments: Repository<EnterFirstEnrollmentEntity>,
     private readonly courses: CourseService,
     private readonly paystack: PaystackProvider,
-    private readonly mail: MailService,
+    private readonly emails: EmailService,
     private readonly config: ConfigService<EnvTypes, true>,
     private readonly audit: AuditLogService,
     private readonly users: UserRepository,
+    private readonly dataSource: DataSource,
   ) {}
 
   async enroll(dto: EnterFirstEnrollDto, meta: EnrollRequestMeta = {}) {
@@ -152,7 +155,6 @@ export class EnterFirstService {
       row.confirmationSource = 'poll';
       row.verifiedAt = new Date();
       await this.enrollments.save(row);
-      await this.sendConfirmationIfNeeded(row);
       return {
         enrollment: this.toDto(row),
         payment: {
@@ -259,19 +261,22 @@ export class EnterFirstService {
   }
 
   async resendConfirmation(id: string) {
-    const row = await this.enrollments.findOne({ where: { id } });
-    if (!row) throw new NotFoundException('Enrollment not found');
-    if (row.paymentStatus !== 'success') {
-      throw new BadRequestException('Enrollment is not paid');
-    }
-    row.emailSentAt = undefined;
-    await this.sendConfirmationIfNeeded(row, true);
+    await this.emails.resendEnrollmentConfirmation(id);
     const fresh = await this.enrollments.findOne({ where: { id } });
-    return this.toDto(fresh ?? row);
+    if (!fresh) throw new NotFoundException('Enrollment not found');
+    return this.toDto(fresh);
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async reverifyPendingEnrollments() {
+    await withAdvisoryLock(
+      this.dataSource,
+      ADVISORY_LOCK.enrollmentReverify,
+      () => this.reverifyPendingBatch(),
+    );
+  }
+
+  private async reverifyPendingBatch() {
     const cutoff = new Date(Date.now() - 2 * 60 * 1000);
     const rows = await this.enrollments.find({
       where: {
@@ -289,6 +294,36 @@ export class EnterFirstService {
       } catch (error) {
         this.logger.warn(
           `Re-verify failed for ${row.paystackReference}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    await this.queueUnsentConfirmations();
+  }
+
+  /** Crash recovery: paid rows that never claimed a confirmation. */
+  private async queueUnsentConfirmations() {
+    const rows = await this.enrollments
+      .createQueryBuilder('e')
+      .where('e.payment_status = :paid', { paid: 'success' })
+      .andWhere('e.amount > 0')
+      .andWhere('e.email_sent_at IS NULL')
+      .andWhere('e.paystack_reference IS NOT NULL')
+      .andWhere(
+        '(e.confirmation_email_status IS NULL OR e.confirmation_email_status = :pending)',
+        { pending: 'pending' },
+      )
+      .orderBy('e.paid_at', 'ASC')
+      .take(40)
+      .getMany();
+    for (const row of rows) {
+      if (!row.paystackReference) continue;
+      try {
+        await this.emails.claimAndQueueConfirmation(row.paystackReference);
+      } catch (error) {
+        this.logger.warn(
+          `Confirmation queue failed for ${row.paystackReference}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
@@ -463,66 +498,112 @@ export class EnterFirstService {
     outcome: CallbackOutcome,
     source: ConfirmationSource,
   ) {
-    if (row.paymentStatus === 'success' || row.paymentStatus === 'refunded') {
+    if (row.paymentStatus === 'success') {
+      if (row.paystackReference) {
+        await this.emails.claimAndQueueConfirmation(row.paystackReference);
+      }
       return;
     }
+    if (row.paymentStatus === 'refunded') return;
+
     const decision = reconcileProviderStatus({
       providerStatus: outcome.status,
       charge: outcome.charge,
       expectedAmount: row.amount,
       expectedCurrency: row.currency,
     });
-    if (decision.charge.transactionId) {
-      row.paystackTransactionId = decision.charge.transactionId;
-    }
-    if (typeof decision.charge.paidAmount === 'number') {
-      row.paidAmount = decision.charge.paidAmount;
-    }
-    if (decision.charge.currency) row.paidCurrency = decision.charge.currency;
-    if (decision.charge.channel) row.paystackChannel = decision.charge.channel;
-    if (outcome.status !== TransactionStatus.PENDING) {
-      row.amountMismatch = !decision.amountMatches;
-      row.currencyMismatch = !decision.currencyMatches;
-      row.verifiedAt = new Date();
-      row.confirmationSource = source;
-    }
+    const tx = decision.charge.transactionId ?? null;
+    const paidAmount =
+      typeof decision.charge.paidAmount === 'number'
+        ? decision.charge.paidAmount
+        : null;
+    const paidCurrency = decision.charge.currency ?? null;
+    const channel = decision.charge.channel ?? null;
+
     if (decision.status === TransactionStatus.SUCCESS) {
+      const updated = queryRows(
+        await this.enrollments.query(
+          `UPDATE enter_first_enrollment
+         SET payment_status = 'success',
+             paid_at = COALESCE(paid_at, NOW()),
+             paystack_transaction_id = COALESCE($2, paystack_transaction_id),
+             paid_amount = COALESCE($3, paid_amount),
+             paid_currency = COALESCE($4, paid_currency),
+             paystack_channel = COALESCE($5, paystack_channel),
+             amount_mismatch = false,
+             currency_mismatch = false,
+             verified_at = NOW(),
+             confirmation_source = $6,
+             updated_at = NOW()
+         WHERE id = $1
+           AND payment_status NOT IN ('success', 'refunded')
+           AND deleted_at IS NULL
+         RETURNING id, paystack_reference`,
+          [row.id, tx, paidAmount, paidCurrency, channel, source],
+        ),
+      );
+      const changed = updated[0] ?? null;
+      if (!changed) return;
       row.paymentStatus = 'success';
       row.paidAt = row.paidAt ?? new Date();
       row.amountMismatch = false;
       row.currencyMismatch = false;
-      await this.enrollments.save(row);
-      await this.sendConfirmationIfNeeded(row);
+      row.verifiedAt = new Date();
+      row.confirmationSource = source;
+      const reference =
+        typeof changed.paystack_reference === 'string'
+          ? changed.paystack_reference
+          : row.paystackReference;
+      if (reference) await this.emails.claimAndQueueConfirmation(reference);
       return;
     }
-    if (decision.status === TransactionStatus.FAILED) {
-      row.paymentStatus = 'failed';
-    }
-    await this.enrollments.save(row);
-  }
 
-  private async sendConfirmationIfNeeded(
-    row: EnterFirstEnrollmentEntity,
-    force = false,
-  ) {
-    if (row.emailSentAt && !force) return;
-    try {
-      await this.mail.sendEnterFirstConfirmation({
-        email: row.email,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        program: row.program || CORE_30_PROGRAM,
-        tracks: row.tracks,
-        amount: row.amount,
-        currency: row.currency,
-        reference: row.paystackReference ?? row.id,
-      });
-      row.emailSentAt = new Date();
-      await this.enrollments.save(row);
-    } catch (error) {
-      this.logger.error(
-        `Enter First confirmation email failed for ${row.email}`,
-        error instanceof Error ? error.stack : String(error),
+    if (decision.status === TransactionStatus.FAILED) {
+      const updated = queryRows(
+        await this.enrollments.query(
+          `UPDATE enter_first_enrollment
+         SET payment_status = 'failed',
+             paystack_transaction_id = COALESCE($2, paystack_transaction_id),
+             paid_amount = COALESCE($3, paid_amount),
+             paid_currency = COALESCE($4, paid_currency),
+             paystack_channel = COALESCE($5, paystack_channel),
+             amount_mismatch = $6,
+             currency_mismatch = $7,
+             verified_at = NOW(),
+             confirmation_source = $8,
+             updated_at = NOW()
+         WHERE id = $1
+           AND payment_status NOT IN ('success', 'refunded')
+           AND deleted_at IS NULL
+         RETURNING id`,
+          [
+            row.id,
+            tx,
+            paidAmount,
+            paidCurrency,
+            channel,
+            !decision.amountMatches,
+            !decision.currencyMatches,
+            source,
+          ],
+        ),
+      );
+      if (updated[0]) row.paymentStatus = 'failed';
+      return;
+    }
+
+    if (tx || paidAmount != null || paidCurrency || channel) {
+      await this.enrollments.query(
+        `UPDATE enter_first_enrollment
+         SET paystack_transaction_id = COALESCE($2, paystack_transaction_id),
+             paid_amount = COALESCE($3, paid_amount),
+             paid_currency = COALESCE($4, paid_currency),
+             paystack_channel = COALESCE($5, paystack_channel),
+             updated_at = NOW()
+         WHERE id = $1
+           AND payment_status NOT IN ('success', 'refunded')
+           AND deleted_at IS NULL`,
+        [row.id, tx, paidAmount, paidCurrency, channel],
       );
     }
   }
@@ -624,7 +705,9 @@ export class EnterFirstService {
             lastName: maskName(row.lastName) ?? '***',
           }
         : row.form,
+      emailStatus: row.confirmationEmailStatus ?? null,
       emailSentAt: row.emailSentAt?.toISOString() ?? null,
+      emailError: row.confirmationEmailError ?? null,
       termsVersion: row.termsVersion ?? null,
       privacyVersion: row.privacyVersion ?? null,
       consentAt: row.consentAt?.toISOString?.() ?? row.consentAt ?? null,

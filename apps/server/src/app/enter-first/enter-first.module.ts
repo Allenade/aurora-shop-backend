@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { CourseModule } from '../course/course.module';
-import { MailModule } from '../mail/mail.module';
+import { EmailModule } from '../email/email.module';
 import { PaymentGatewayModule } from '../payment-gateway/payment-gateway.module';
 import { RefundRequestEntity } from '../refund/entities/refund-request.entity';
 import { UserModule } from '../user/user.module';
@@ -14,7 +14,7 @@ import { EnterFirstEnrollmentEntity } from './entities/enter-first-enrollment.en
   imports: [
     TypeOrmModule.forFeature([EnterFirstEnrollmentEntity, RefundRequestEntity]),
     PaymentGatewayModule,
-    MailModule,
+    EmailModule,
     CourseModule,
     AuthModule,
     UserModule,

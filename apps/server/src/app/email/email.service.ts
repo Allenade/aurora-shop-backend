@@ -12,10 +12,26 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { EnvTypes } from '@app/shared';
 import { Queue, Worker } from 'bullmq';
 import { randomUUID } from 'crypto';
-import { Brackets, In, LessThanOrEqual, Repository } from 'typeorm';
+import { Brackets, DataSource, In, LessThanOrEqual, Repository } from 'typeorm';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
 import { CourseEntity } from '../course/entities/course.entity';
+import { ADVISORY_LOCK, withAdvisoryLock } from '../../common/db/advisory-lock';
 import { renderEmail } from './email-render';
+import { deliverAddress, isDeliverableEmail } from './email-safety';
+import {
+  CONFIRMATION_CLAIM_WHERE,
+  CONFIRMATION_EMAIL_ATTEMPTS,
+  enrollmentConfirmationIdempotencyKey,
+  readConfirmationJob,
+  renderEnrollmentConfirmation,
+  type ConfirmationJobData,
+} from './enrollment-confirmation';
+import {
+  dedupeComposeRecipients,
+  parseSelectors,
+  type ComposeCandidate,
+  type ParsedSelector,
+} from './recipient-selectors';
 import {
   batchIdempotencyKey,
   chunkIds,
@@ -32,8 +48,13 @@ import {
 import type {
   CreateCampaignDto,
   PreviewAudienceDto,
+  PreviewSelectorsDto,
+  SaveDraftDto,
+  ScheduleDraftDto,
   SendEmailDto,
   TestSendDto,
+  TestToMeDto,
+  UpdateDraftDto,
   UpsertTemplateDto,
 } from './dto/email.dto';
 import {
@@ -72,6 +93,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     @InjectRepository(CourseEntity)
     private readonly courses: Repository<CourseEntity>,
     private readonly config: ConfigService<EnvTypes, true>,
+    private readonly dataSource: DataSource,
   ) {}
 
   onModuleInit() {
@@ -84,11 +106,35 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       this.worker = new Worker(
         'core30-email',
         async (job) => {
-          const ids = (job.data as { messageIds?: string[] }).messageIds ?? [];
+          if (job.name === 'enrollment-confirmation') {
+            const data = readConfirmationJob(job.data);
+            if (!data) return;
+            await this.deliverEnrollmentConfirmation(data);
+            return;
+          }
+          const payload = job.data as { messageIds?: string[] };
+          const ids = payload.messageIds ?? [];
           await this.processIds(ids);
         },
         { connection, concurrency: 1 },
       );
+      this.worker.on('failed', (job, error) => {
+        if (!job || job.name !== 'enrollment-confirmation') return;
+        const maxAttempts = job.opts.attempts ?? 1;
+        if (job.attemptsMade < maxAttempts) return;
+        const data = readConfirmationJob(job.data);
+        if (!data) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        void this.markConfirmationFailed(data.enrollmentIds, reason).catch(
+          (err: unknown) => {
+            this.logger.error(
+              `Could not record confirmation failure: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          },
+        );
+      });
       this.worker.on('error', (error) => {
         this.logger.error(`Email worker error: ${error.message}`);
       });
@@ -363,14 +409,53 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
   @Cron(CronExpression.EVERY_MINUTE)
   async pumpQueue() {
     if (this.config.get('nodeEnv', { infer: true }) === 'test') return;
-    const due = await this.messages.find({
-      where: { status: 'queued', nextAttemptAt: LessThanOrEqual(new Date()) },
-      take: this.batchSize(),
-      order: { nextAttemptAt: 'ASC' },
-    });
-    if (!due.length) return;
-    await this.enqueue(due.map((row) => row.id));
-    await this.completeCampaigns();
+    await withAdvisoryLock(
+      this.dataSource,
+      ADVISORY_LOCK.emailPump,
+      async () => {
+        const due = await this.messages.find({
+          where: {
+            status: 'queued',
+            nextAttemptAt: LessThanOrEqual(new Date()),
+          },
+          take: this.batchSize(),
+          order: { nextAttemptAt: 'ASC' },
+        });
+        if (!due.length) return;
+        await this.enqueue(due.map((row) => row.id));
+        await this.completeCampaigns();
+      },
+    );
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async dispatchScheduledCampaigns() {
+    if (this.config.get('nodeEnv', { infer: true }) === 'test') return;
+    await withAdvisoryLock(
+      this.dataSource,
+      ADVISORY_LOCK.emailSchedule,
+      async () => {
+        const due = await this.campaigns.find({
+          where: {
+            status: 'scheduled',
+            scheduledAt: LessThanOrEqual(new Date()),
+          },
+          take: 20,
+          order: { scheduledAt: 'ASC' },
+        });
+        for (const row of due) {
+          try {
+            await this.sendDraftNow(row.id, { quiet: true });
+          } catch (error) {
+            this.logger.warn(
+              `Scheduled send failed for ${row.id}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+      },
+    );
   }
 
   async processIds(ids: string[]) {
@@ -426,35 +511,83 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
   private async sendBatch(batch: EmailMessageEntity[]) {
     if (!batch.length) return;
     const from = this.fromAddress();
-    const keys = batch.map((message) => message.idempotencyKey);
+    const outbound: Array<{ message: EmailMessageEntity; to: string }> = [];
+    const skipped: EmailMessageEntity[] = [];
+    for (const message of batch) {
+      const decision = deliverAddress(message.toEmail, {
+        allowlist: this.config.get('email.allowlist', { infer: true }),
+        redirectTo: this.config.get('email.redirectTo', { infer: true }),
+      });
+      if (decision.action === 'skip') {
+        message.status = 'failed';
+        message.lastError = decision.reason.slice(0, 2000);
+        message.claimToken = null;
+        message.nextAttemptAt = null;
+        skipped.push(message);
+        continue;
+      }
+      if (decision.redirectedFrom) {
+        this.logger.log(
+          `[email-redirect] ${decision.redirectedFrom} → ${decision.to}`,
+        );
+      }
+      outbound.push({ message, to: decision.to });
+    }
+    if (skipped.length) {
+      await this.messages.save(skipped);
+      await this.bumpCampaignCounts(skipped, 'failed');
+    }
+    if (!outbound.length) return;
+    const keys = outbound.map((item) => item.message.idempotencyKey);
+    if (!this.config.get('email.apiKey', { infer: true })) {
+      this.logger.log(
+        `[email-dry-run] RESEND_API_KEY missing; ${outbound.length} message(s) not sent`,
+      );
+      for (const item of outbound) {
+        this.logger.log(
+          `[email-dry-run] to=${item.to} subject=${item.message.subject}`,
+        );
+        item.message.status = 'delivered';
+        item.message.resendId = null;
+        item.message.lastError = null;
+        item.message.claimToken = null;
+        item.message.nextAttemptAt = null;
+      }
+      const dry = outbound.map((item) => item.message);
+      await this.messages.save(dry);
+      await this.bumpCampaignCounts(dry, 'sent');
+      return;
+    }
     try {
       const ids = await this.postResendBatch(
-        batch.map((message) => ({
+        outbound.map((item) => ({
           from,
-          to: [message.toEmail],
-          subject: message.subject,
-          html: message.html,
-          text: message.text,
-          attachments: (message.attachments ?? []).map((file) => ({
+          to: [item.to],
+          subject: item.message.subject,
+          html: item.message.html,
+          text: item.message.text,
+          attachments: (item.message.attachments ?? []).map((file) => ({
             filename: file.filename,
             path: file.url,
           })),
         })),
         batchIdempotencyKey(keys),
       );
-      batch.forEach((message, index) => {
-        message.resendId = ids[index] ?? null;
-        message.status = 'sending';
-        message.lastError = null;
-        message.claimToken = null;
-        message.nextAttemptAt = null;
+      outbound.forEach((item, index) => {
+        item.message.resendId = ids[index] ?? null;
+        item.message.status = 'sending';
+        item.message.lastError = null;
+        item.message.claimToken = null;
+        item.message.nextAttemptAt = null;
       });
-      await this.messages.save(batch);
-      await this.bumpCampaignCounts(batch, 'sent');
+      const sent = outbound.map((item) => item.message);
+      await this.messages.save(sent);
+      await this.bumpCampaignCounts(sent, 'sent');
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const max = this.config.get('email.maxAttempts', { infer: true });
-      for (const message of batch) {
+      const failedBatch = outbound.map((item) => item.message);
+      for (const message of failedBatch) {
         const delay = retryDelayMs(message.attempts, max);
         message.claimToken = null;
         message.lastError = reason.slice(0, 2000);
@@ -466,9 +599,9 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
           message.nextAttemptAt = new Date(Date.now() + delay);
         }
       }
-      await this.messages.save(batch);
+      await this.messages.save(failedBatch);
       await this.bumpCampaignCounts(
-        batch.filter((message) => message.status === 'failed'),
+        failedBatch.filter((message) => message.status === 'failed'),
         'failed',
       );
     }
@@ -480,12 +613,10 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
   ): Promise<Array<string | null>> {
     const apiKey = this.config.get('email.apiKey', { infer: true });
     if (!apiKey) {
-      if (this.config.get('nodeEnv', { infer: true }) === 'production') {
-        throw new Error('RESEND_API_KEY is not configured');
-      }
-      return payload.map(
-        (_, index) => `mock-${idempotencyKey.slice(0, 12)}-${index}`,
+      this.logger.log(
+        `[email-dry-run] Resend batch skipped (${payload.length}) key=${idempotencyKey}`,
       );
+      return payload.map(() => null);
     }
     const res = await fetch('https://api.resend.com/emails/batch', {
       method: 'POST',
@@ -802,19 +933,332 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     messages: EmailMessageEntity[],
     field: 'sent' | 'failed',
   ) {
-    const ids = [
-      ...new Set(messages.map((message) => message.campaignId).filter(Boolean)),
-    ] as string[];
-    if (!ids.length) return;
-    const rows = await this.campaigns.find({ where: { id: In(ids) } });
-    for (const row of rows) {
-      const count = messages.filter(
-        (message) => message.campaignId === row.id,
-      ).length;
-      if (field === 'sent') row.sentCount += count;
-      else row.failedCount += count;
+    const counts = new Map<string, number>();
+    for (const message of messages) {
+      if (!message.campaignId) continue;
+      counts.set(message.campaignId, (counts.get(message.campaignId) ?? 0) + 1);
     }
-    await this.campaigns.save(rows);
+    for (const [id, count] of counts) {
+      const amount = Math.trunc(count);
+      if (amount < 1) continue;
+      const update = this.campaigns
+        .createQueryBuilder()
+        .update(EmailCampaignEntity)
+        .where('id = :id', { id });
+      if (field === 'sent') {
+        await update
+          .set({ sentCount: () => `"sent_count" + ${amount}` })
+          .execute();
+      } else {
+        await update
+          .set({ failedCount: () => `"failed_count" + ${amount}` })
+          .execute();
+      }
+    }
+  }
+
+  async previewSelectors(dto: PreviewSelectorsDto) {
+    const resolved = await this.resolveSelectors(
+      dto.selectors ?? [],
+      dto.kind ?? 'transactional',
+    );
+    return {
+      count: resolved.recipients.length,
+      sample: resolved.recipients.slice(0, 8).map((person) => ({
+        email: person.email,
+        name: person.name,
+        enrollmentId: person.enrollmentId,
+        courses: person.courses,
+      })),
+    };
+  }
+
+  async searchStudents(q: string, limitRaw?: string) {
+    const term = q.trim();
+    if (!term) return { items: [] as ComposeSample[] };
+    const limit = Math.min(50, Math.max(1, Number(limitRaw) || 20));
+    const rows = await this.enrollments
+      .createQueryBuilder('e')
+      .where('e.anonymised_at IS NULL')
+      .andWhere(
+        `(e.email ILIKE :q OR e.first_name ILIKE :q OR e.last_name ILIKE :q OR (e.first_name || ' ' || e.last_name) ILIKE :q)`,
+        { q: `%${term}%` },
+      )
+      .orderBy('e.createdAt', 'DESC')
+      .take(limit)
+      .getMany();
+    const content = await this.courseContent(
+      rows.flatMap((row) => row.tracks ?? []),
+    );
+    return {
+      items: dedupeComposeRecipients(
+        rows.map((row) => this.toCandidate(row, content.titles)),
+      ).map(toComposeSample),
+    };
+  }
+
+  async saveDraft(dto: SaveDraftDto, userId?: string) {
+    this.assertSelectors(dto.selectors ?? []);
+    const row = await this.campaigns.save(
+      this.campaigns.create({
+        name: (dto.name?.trim() || dto.subject.trim()).slice(0, 160),
+        subject: dto.subject,
+        html: dto.html,
+        text: dto.text ?? '',
+        kind: dto.kind ?? 'transactional',
+        audience: { kind: 'explicit', emails: [] },
+        selectors: dto.selectors ?? [],
+        status: 'draft',
+        totalRecipients: 0,
+        sentCount: 0,
+        failedCount: 0,
+        createdBy: userId ?? null,
+        attachments: [],
+        scheduledAt: null,
+      }),
+    );
+    return toDraft(row);
+  }
+
+  async updateDraft(id: string, dto: UpdateDraftDto) {
+    const row = await this.requireEditableDraft(id);
+    if (dto.selectors) this.assertSelectors(dto.selectors);
+    if (dto.name !== undefined) row.name = dto.name.trim().slice(0, 160);
+    if (dto.subject !== undefined) row.subject = dto.subject;
+    if (dto.html !== undefined) row.html = dto.html;
+    if (dto.text !== undefined) row.text = dto.text;
+    if (dto.kind !== undefined) row.kind = dto.kind;
+    if (dto.selectors !== undefined) row.selectors = dto.selectors;
+    await this.campaigns.save(row);
+    return toDraft(row);
+  }
+
+  async deleteDraft(id: string) {
+    const row = await this.requireEditableDraft(id);
+    await this.campaigns.softRemove(row);
+    return { ok: true };
+  }
+
+  async listDrafts() {
+    const rows = await this.campaigns.find({
+      where: [{ status: 'draft' }, { status: 'scheduled' }],
+      order: { updatedAt: 'DESC' },
+      take: 100,
+    });
+    return rows.map(toDraft);
+  }
+
+  async getDraft(id: string) {
+    const row = await this.campaigns.findOne({ where: { id } });
+    if (!row || (row.status !== 'draft' && row.status !== 'scheduled')) {
+      throw new NotFoundException('Draft not found');
+    }
+    return toDraft(row);
+  }
+
+  async scheduleDraft(id: string, dto: ScheduleDraftDto) {
+    const row = await this.requireEditableDraft(id);
+    const sendAt = new Date(dto.sendAt);
+    if (Number.isNaN(sendAt.getTime()) || sendAt.getTime() <= Date.now()) {
+      throw new BadRequestException('sendAt must be a future datetime');
+    }
+    row.status = 'scheduled';
+    row.scheduledAt = sendAt;
+    await this.campaigns.save(row);
+    return toDraft(row);
+  }
+
+  async sendDraftNow(id: string, opts?: { quiet?: boolean }) {
+    const claimed = await this.campaigns
+      .createQueryBuilder()
+      .update(EmailCampaignEntity)
+      .set({ status: 'sending' })
+      .where('id = :id', { id })
+      .andWhere("status IN ('draft', 'scheduled')")
+      .andWhere('deleted_at IS NULL')
+      .returning('*')
+      .execute();
+    if (!returnedIds(claimed.raw).length) {
+      if (opts?.quiet) return null;
+      const existing = await this.campaigns.findOne({ where: { id } });
+      if (!existing) throw new NotFoundException('Draft not found');
+      throw new BadRequestException('Draft is not waiting to send');
+    }
+    const row = await this.campaigns.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Draft not found');
+    const resolved = await this.resolveSelectors(row.selectors ?? [], row.kind);
+    if (!resolved.recipients.length) {
+      row.status = 'failed';
+      row.totalRecipients = 0;
+      await this.campaigns.save(row);
+      if (opts?.quiet) return null;
+      throw new BadRequestException('No recipients after exclusions');
+    }
+    const enrollmentIds = resolved.recipients
+      .map((person) => person.enrollmentId)
+      .filter((value): value is string => Boolean(value));
+    const enrolled = enrollmentIds.length
+      ? await this.enrollments.find({ where: { id: In(enrollmentIds) } })
+      : [];
+    const byId = new Map(enrolled.map((item) => [item.id, item]));
+    row.totalRecipients = resolved.recipients.length;
+    row.audience = {
+      kind: 'explicit',
+      emails: resolved.recipients.map((person) => person.email),
+    };
+    await this.campaigns.save(row);
+    const created = await this.createMessages({
+      campaignId: row.id,
+      recipients: resolved.recipients.map((person) => ({
+        email: person.email,
+        name: person.name || 'there',
+        marketingOptIn: person.marketingOptIn,
+        enrollment: person.enrollmentId
+          ? byId.get(person.enrollmentId)
+          : undefined,
+      })),
+      subject: row.subject,
+      html: row.html,
+      text: row.text,
+      kind: row.kind,
+      attachments: row.attachments ?? [],
+    });
+    await this.enqueue(created.map((message) => message.id));
+    return { ...toCampaign(row), queued: created.length };
+  }
+
+  async sendDraftTest(id: string, adminEmail: string) {
+    const row = await this.campaigns.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Draft not found');
+    return this.sendTestToAdmin(adminEmail, {
+      subject: row.subject,
+      html: row.html,
+      text: row.text,
+    });
+  }
+
+  async sendTestToAdmin(adminEmail: string, dto: TestToMeDto) {
+    const email = adminEmail.trim().toLowerCase();
+    if (!email) throw new BadRequestException('Admin account has no email');
+    const [message] = await this.createMessages({
+      recipients: [{ email, name: 'there', marketingOptIn: true }],
+      subject: dto.subject,
+      html: dto.html,
+      text: dto.text ?? '',
+      kind: 'transactional',
+      attachments: [],
+    });
+    await this.enqueue([message.id]);
+    const fresh = await this.messages.findOne({ where: { id: message.id } });
+    return toMessage(fresh ?? message);
+  }
+
+  async listSent() {
+    const rows = await this.campaigns.find({
+      where: [
+        { status: 'queued' },
+        { status: 'sending' },
+        { status: 'paused' },
+        { status: 'completed' },
+        { status: 'cancelled' },
+        { status: 'failed' },
+      ],
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      subject: row.subject,
+      status: row.status,
+      totalRecipients: row.totalRecipients,
+      sentCount: row.sentCount,
+      failedCount: row.failedCount,
+      createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
+    }));
+  }
+
+  async getSent(id: string) {
+    const row = await this.campaigns.findOne({ where: { id } });
+    if (!row || row.status === 'draft' || row.status === 'scheduled') {
+      throw new NotFoundException('Sent email not found');
+    }
+    const messages = await this.messages.find({
+      where: { campaignId: id },
+      order: { createdAt: 'ASC' },
+      take: 500,
+    });
+    return {
+      ...toCampaign(row),
+      html: row.html,
+      text: row.text,
+      sentCount: row.sentCount,
+      failedCount: row.failedCount,
+      recipients: messages.map((message) => ({
+        id: message.id,
+        enrollmentId: message.enrollmentId ?? null,
+        email: message.toEmail,
+        name: message.toName,
+        status: message.status,
+        attempts: message.attempts,
+        lastError: message.lastError ?? null,
+        resendId: message.resendId ?? null,
+      })),
+    };
+  }
+
+  async resendFailed(id: string) {
+    return this.retryFailed(id);
+  }
+
+  /** Claim unpaid confirmation rows for a Paystack reference, then queue one email. */
+  async claimAndQueueConfirmation(paymentRef: string) {
+    const ref = paymentRef.trim();
+    if (!ref) return { claimed: 0 };
+    const matches = await this.enrollments.find({
+      where: { paystackReference: ref, paymentStatus: 'success' },
+    });
+    const claimed = await this.claimConfirmationIds(
+      matches.map((row) => row.id),
+    );
+    if (!claimed.length) return { claimed: 0 };
+    await this.enqueueConfirmation({
+      paymentRef: ref,
+      idempotencyKey: enrollmentConfirmationIdempotencyKey(ref),
+      enrollmentIds: claimed,
+    });
+    return { claimed: claimed.length };
+  }
+
+  /** Admin resend. Skips the claim predicate and still uses the email queue. */
+  async resendEnrollmentConfirmation(enrollmentId: string) {
+    const row = await this.enrollments.findOne({ where: { id: enrollmentId } });
+    if (!row) throw new NotFoundException('Enrollment not found');
+    if (row.paymentStatus !== 'success') {
+      throw new BadRequestException('Enrollment is not paid');
+    }
+    await this.enrollments
+      .createQueryBuilder()
+      .update(EnterFirstEnrollmentEntity)
+      .set({
+        confirmationEmailStatus: 'sending',
+        confirmationEmailClaimedAt: () => 'NOW()',
+        confirmationEmailError: null,
+      })
+      .where('id = :id', { id: row.id })
+      .andWhere("payment_status = 'success'")
+      .andWhere('deleted_at IS NULL')
+      .execute();
+    const ref = row.paystackReference || row.id;
+    await this.enqueueConfirmation({
+      paymentRef: ref,
+      idempotencyKey: enrollmentConfirmationIdempotencyKey(
+        ref,
+        `resend-${Date.now()}`,
+      ),
+      enrollmentIds: [row.id],
+    });
+    return { queued: true, id: row.id };
   }
 
   private async completeCampaigns() {
@@ -852,6 +1296,332 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     const port = this.config.get('port', { infer: true });
     return `http://localhost:${port}`;
   }
+
+  private assertSelectors(selectors: string[]) {
+    try {
+      return parseSelectors(selectors);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid selector',
+      );
+    }
+  }
+
+  private async requireEditableDraft(id: string) {
+    const row = await this.campaigns.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Draft not found');
+    if (row.status !== 'draft' && row.status !== 'scheduled') {
+      throw new BadRequestException(
+        'Only a draft or scheduled email can be changed',
+      );
+    }
+    return row;
+  }
+
+  private async resolveSelectors(selectors: string[], kind: EmailKind) {
+    const parsed = this.assertSelectors(selectors);
+    const candidates: ComposeCandidate[] = [];
+    for (const selector of parsed) {
+      candidates.push(...(await this.candidatesFor(selector)));
+    }
+    const unique = dedupeComposeRecipients(candidates);
+    const suppressionRows = await this.suppressions.find();
+    const suppressed = new Map(
+      suppressionRows.map((row) => [row.email.toLowerCase(), row.reason]),
+    );
+    const recipients = unique.filter((person) => {
+      if (!isDeliverableEmail(person.email)) return false;
+      return includeRecipient({
+        kind,
+        marketingOptIn: person.marketingOptIn,
+        suppression: suppressed.get(person.email),
+      }).include;
+    });
+    return { recipients };
+  }
+
+  private async candidatesFor(
+    selector: ParsedSelector,
+  ): Promise<ComposeCandidate[]> {
+    if (selector.type === 'allPaid') {
+      const rows = await this.paidQuery().getMany();
+      const content = await this.courseContent(
+        rows.flatMap((row) => row.tracks ?? []),
+      );
+      return rows.map((row) => this.toCandidate(row, content.titles));
+    }
+    if (selector.type === 'course') {
+      const course = await this.courses.findOne({
+        where: { id: selector.courseId },
+      });
+      if (!course) return [];
+      const rows = await this.paidQuery()
+        .andWhere('e.tracks @> CAST(:track AS jsonb)', {
+          track: JSON.stringify([course.slug]),
+        })
+        .getMany();
+      const titles = new Map([[course.slug, course.name]]);
+      return rows.map((row) => this.toCandidate(row, titles));
+    }
+    if (selector.type === 'ageGroup') {
+      const rows = await this.paidQuery()
+        .andWhere('e.date_of_birth IS NOT NULL')
+        .andWhere(
+          'EXTRACT(YEAR FROM age(e.date_of_birth)) BETWEEN :minAge AND :maxAge',
+          { minAge: selector.min, maxAge: selector.max },
+        )
+        .getMany();
+      const content = await this.courseContent(
+        rows.flatMap((row) => row.tracks ?? []),
+      );
+      return rows.map((row) => this.toCandidate(row, content.titles));
+    }
+    if (selector.enrollmentId) {
+      const row = await this.enrollments.findOne({
+        where: { id: selector.enrollmentId },
+      });
+      if (!row || row.anonymisedAt) return [];
+      const content = await this.courseContent(row.tracks ?? []);
+      return [this.toCandidate(row, content.titles)];
+    }
+    const email = (selector.email ?? '').trim().toLowerCase();
+    if (!email) return [];
+    const rows = (await this.enrollments.find({ where: { email } })).filter(
+      (row) => !row.anonymisedAt,
+    );
+    if (!rows.length) {
+      return [
+        {
+          email,
+          name: '',
+          enrollmentId: null,
+          courses: [],
+          marketingOptIn: false,
+        },
+      ];
+    }
+    const content = await this.courseContent(
+      rows.flatMap((row) => row.tracks ?? []),
+    );
+    return rows.map((row) => this.toCandidate(row, content.titles));
+  }
+
+  private paidQuery() {
+    return this.enrollments
+      .createQueryBuilder('e')
+      .where('e.payment_status = :paid', { paid: 'success' })
+      .andWhere('e.anonymised_at IS NULL');
+  }
+
+  private toCandidate(
+    row: EnterFirstEnrollmentEntity,
+    titles: Map<string, string>,
+  ): ComposeCandidate {
+    return {
+      email: row.email,
+      name: `${row.firstName} ${row.lastName}`.trim(),
+      enrollmentId: row.id,
+      courses: (row.tracks ?? []).map((slug) => titles.get(slug) ?? slug),
+      marketingOptIn: Boolean(row.marketingOptIn),
+    };
+  }
+
+  private async courseContent(slugs: string[]) {
+    const unique = [...new Set(slugs.filter(Boolean))];
+    const titles = new Map<string, string>();
+    const messages = new Map<string, string | null>();
+    if (!unique.length) return { titles, messages };
+    const found = await this.courses.find({ where: { slug: In(unique) } });
+    for (const course of found) {
+      titles.set(course.slug, course.name);
+      messages.set(
+        course.slug,
+        course.afterPaymentEmail?.trim() ? course.afterPaymentEmail : null,
+      );
+    }
+    return { titles, messages };
+  }
+
+  private async claimConfirmationIds(ids: string[]) {
+    if (!ids.length) return [] as string[];
+    const result = await this.enrollments
+      .createQueryBuilder()
+      .update(EnterFirstEnrollmentEntity)
+      .set({
+        confirmationEmailStatus: 'sending',
+        confirmationEmailClaimedAt: () => 'NOW()',
+        confirmationEmailError: null,
+      })
+      .where('id IN (:...ids)', { ids })
+      .andWhere(CONFIRMATION_CLAIM_WHERE)
+      .returning('*')
+      .execute();
+    return returnedIds(result.raw);
+  }
+
+  private async enqueueConfirmation(data: ConfirmationJobData) {
+    if (this.queue) {
+      try {
+        await this.queue.add('enrollment-confirmation', data, {
+          attempts: CONFIRMATION_EMAIL_ATTEMPTS,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 1000,
+          removeOnFail: 1000,
+        });
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `Confirmation queue add failed, sending inline: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    for (
+      let attempt = 1;
+      attempt <= CONFIRMATION_EMAIL_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        await this.deliverEnrollmentConfirmation(data);
+        return;
+      } catch (error) {
+        if (attempt === CONFIRMATION_EMAIL_ATTEMPTS) {
+          const reason = error instanceof Error ? error.message : String(error);
+          await this.markConfirmationFailed(data.enrollmentIds, reason);
+        }
+      }
+    }
+  }
+
+  private async deliverEnrollmentConfirmation(data: ConfirmationJobData) {
+    const rows = await this.enrollments.find({
+      where: { id: In(data.enrollmentIds), paymentStatus: 'success' },
+    });
+    const resend = data.idempotencyKey.includes('-resend-');
+    const pending = rows.filter(
+      (row) => resend || row.confirmationEmailStatus !== 'sent',
+    );
+    if (!pending.length) return;
+    const content = await this.courseContent(
+      pending.flatMap((row) => row.tracks ?? []),
+    );
+    const groups = new Map<string, EnterFirstEnrollmentEntity[]>();
+    for (const row of pending) {
+      const email = row.email.trim().toLowerCase();
+      const list = groups.get(email) ?? [];
+      list.push(row);
+      groups.set(email, list);
+    }
+    let index = 0;
+    for (const [email, group] of groups) {
+      const ids = group.map((row) => row.id);
+      const decision = deliverAddress(email, {
+        allowlist: this.config.get('email.allowlist', { infer: true }),
+        redirectTo: this.config.get('email.redirectTo', { infer: true }),
+      });
+      if (decision.action === 'skip') {
+        await this.markConfirmationFailed(ids, decision.reason);
+        continue;
+      }
+      const slugs: string[] = [];
+      for (const row of group) {
+        for (const slug of row.tracks ?? []) {
+          if (!slugs.includes(slug)) slugs.push(slug);
+        }
+      }
+      const rendered = renderEnrollmentConfirmation({
+        studentName: group[0]?.firstName ?? 'there',
+        courses: slugs.map((slug) => ({
+          title: content.titles.get(slug) ?? slug,
+          messageHtml: content.messages.get(slug) ?? null,
+        })),
+      });
+      const idempotencyKey =
+        groups.size === 1
+          ? data.idempotencyKey
+          : `${data.idempotencyKey}-${index}`;
+      index += 1;
+      await this.postResendOne({
+        to: decision.to,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        idempotencyKey,
+      });
+      await this.markConfirmationSent(ids);
+    }
+  }
+
+  private async postResendOne(input: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+    idempotencyKey: string;
+  }) {
+    const apiKey = this.config.get('email.apiKey', { infer: true });
+    if (!apiKey) {
+      this.logger.log(
+        `[email-dry-run] confirmation to=${input.to} subject=${input.subject} key=${input.idempotencyKey}`,
+      );
+      return;
+    }
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': input.idempotencyKey,
+      },
+      body: JSON.stringify({
+        from: this.fromAddress(),
+        to: [input.to],
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      let message = `Resend failed (${res.status})`;
+      try {
+        const body = (await res.json()) as { message?: string };
+        if (body.message) message = body.message;
+      } catch {
+        /* response was not JSON */
+      }
+      throw new Error(message);
+    }
+  }
+
+  private async markConfirmationSent(ids: string[]) {
+    if (!ids.length) return;
+    await this.enrollments
+      .createQueryBuilder()
+      .update(EnterFirstEnrollmentEntity)
+      .set({
+        confirmationEmailStatus: 'sent',
+        emailSentAt: () => 'NOW()',
+        confirmationEmailError: null,
+      })
+      .where('id IN (:...ids)', { ids })
+      .execute();
+  }
+
+  private async markConfirmationFailed(ids: string[], reason: string) {
+    if (!ids.length) return;
+    await this.enrollments
+      .createQueryBuilder()
+      .update(EnterFirstEnrollmentEntity)
+      .set({
+        confirmationEmailStatus: 'failed',
+        confirmationEmailError: reason.slice(0, 2000),
+      })
+      .where('id IN (:...ids)', { ids })
+      .andWhere("confirmation_email_status = 'sending'")
+      .execute();
+  }
 }
 
 function toTemplate(row: EmailTemplateEntity) {
@@ -880,8 +1650,53 @@ function toCampaign(row: EmailCampaignEntity) {
     totalRecipients: row.totalRecipients,
     sentCount: row.sentCount,
     failedCount: row.failedCount,
+    selectors: row.selectors ?? [],
+    scheduledAt: row.scheduledAt?.toISOString?.() ?? row.scheduledAt ?? null,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
   };
+}
+
+type ComposeSample = {
+  email: string;
+  name: string;
+  enrollmentId: string | null;
+  courses: string[];
+};
+
+function toComposeSample(person: ComposeCandidate): ComposeSample {
+  return {
+    email: person.email,
+    name: person.name,
+    enrollmentId: person.enrollmentId,
+    courses: person.courses,
+  };
+}
+
+function toDraft(row: EmailCampaignEntity) {
+  return {
+    id: row.id,
+    name: row.name,
+    subject: row.subject,
+    html: row.html,
+    text: row.text,
+    kind: row.kind,
+    selectors: row.selectors ?? [],
+    status: row.status,
+    scheduledAt: row.scheduledAt?.toISOString?.() ?? row.scheduledAt ?? null,
+    createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
+    updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
+  };
+}
+
+function returnedIds(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const ids: string[] = [];
+  for (const row of list) {
+    if (!row || typeof row !== 'object') continue;
+    const id = (row as { id?: unknown }).id;
+    if (typeof id === 'string') ids.push(id);
+  }
+  return ids;
 }
 
 function toMessage(row: EmailMessageEntity) {

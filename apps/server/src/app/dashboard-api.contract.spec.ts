@@ -96,6 +96,11 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
     permission: 'READ enter_first',
   },
   {
+    method: 'Post',
+    path: 'admin/enter-first/enrollments/:id/resend-confirmation',
+    permission: 'UPDATE enter_first',
+  },
+  {
     method: 'Delete',
     path: 'admin/enter-first/enrollments/:id',
     permission: 'MANAGE all',
@@ -193,6 +198,64 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
     method: 'Post',
     path: 'admin/emails/audience/preview',
     permission: 'READ email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/recipients/preview',
+    permission: 'READ email',
+  },
+  {
+    method: 'Get',
+    path: 'admin/emails/students/search',
+    permission: 'READ email',
+  },
+  { method: 'Get', path: 'admin/emails/drafts', permission: 'LIST email' },
+  { method: 'Post', path: 'admin/emails/drafts', permission: 'CREATE email' },
+  {
+    method: 'Get',
+    path: 'admin/emails/drafts/:id',
+    permission: 'READ email',
+  },
+  {
+    method: 'Patch',
+    path: 'admin/emails/drafts/:id',
+    permission: 'UPDATE email',
+  },
+  {
+    method: 'Delete',
+    path: 'admin/emails/drafts/:id',
+    permission: 'DELETE email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/drafts/:id/schedule',
+    permission: 'UPDATE email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/drafts/:id/send',
+    permission: 'CREATE email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/drafts/:id/test',
+    permission: 'CREATE email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/test-to-me',
+    permission: 'CREATE email',
+  },
+  { method: 'Get', path: 'admin/emails/sent', permission: 'LIST email' },
+  {
+    method: 'Get',
+    path: 'admin/emails/sent/:id',
+    permission: 'READ email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/sent/:id/resend-failed',
+    permission: 'UPDATE email',
   },
   {
     method: 'Post',

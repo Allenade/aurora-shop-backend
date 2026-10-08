@@ -190,3 +190,112 @@ export class CreateCampaignDto extends SendEmailDto {
   @ApiProperty()
   name: string;
 }
+
+export class PreviewSelectorsDto {
+  @IsArray()
+  @IsString({ each: true })
+  @ApiProperty({
+    type: [String],
+    description:
+      'allPaid, course:<courseId>, ageGroup:<min-max|min+|min=n,max=n>, student:<enrollmentId|email>',
+    example: ['allPaid', 'ageGroup:13-17'],
+  })
+  selectors: string[];
+
+  @IsIn(['transactional', 'marketing'])
+  @IsOptional()
+  @ApiPropertyOptional({ enum: ['transactional', 'marketing'] })
+  kind?: EmailKind;
+}
+
+export class SaveDraftDto {
+  @IsString()
+  @MaxLength(160)
+  @IsOptional()
+  @ApiPropertyOptional()
+  name?: string;
+
+  @IsString()
+  @MaxLength(200)
+  @ApiProperty()
+  subject: string;
+
+  @IsString()
+  @ApiProperty()
+  html: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional()
+  text?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @ApiProperty({ type: [String] })
+  selectors: string[];
+
+  @IsIn(['transactional', 'marketing'])
+  @IsOptional()
+  @ApiPropertyOptional({ enum: ['transactional', 'marketing'] })
+  kind?: EmailKind;
+}
+
+export class UpdateDraftDto {
+  @IsString()
+  @MaxLength(160)
+  @IsOptional()
+  @ApiPropertyOptional()
+  name?: string;
+
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  @ApiPropertyOptional()
+  subject?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional()
+  html?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional()
+  text?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  @ApiPropertyOptional({ type: [String] })
+  selectors?: string[];
+
+  @IsIn(['transactional', 'marketing'])
+  @IsOptional()
+  @ApiPropertyOptional({ enum: ['transactional', 'marketing'] })
+  kind?: EmailKind;
+}
+
+export class ScheduleDraftDto {
+  @IsString()
+  @ApiProperty({
+    description: 'ISO datetime in the future when the draft should send',
+    example: '2026-10-09T09:00:00.000Z',
+  })
+  sendAt: string;
+}
+
+export class TestToMeDto {
+  @IsString()
+  @MaxLength(200)
+  @ApiProperty()
+  subject: string;
+
+  @IsString()
+  @ApiProperty()
+  html: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional()
+  text?: string;
+}

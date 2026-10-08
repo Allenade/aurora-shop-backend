@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { DataSource, LessThan, Repository } from 'typeorm';
 import type { EnvTypes } from '@app/shared';
 import { randomInt } from 'crypto';
 import { InventoryService } from '../inventory/inventory.service';
@@ -17,6 +17,8 @@ import {
 } from '../payment-gateway/_contract/payment.types';
 import { TransactionService } from '../transaction/transaction.service';
 import { UserRepository } from '../user/repositories/user.repository';
+import { ADVISORY_LOCK, withAdvisoryLock } from '../../common/db/advisory-lock';
+import { queryRows } from '../../common/db/query-rows';
 import {
   OrderEntity,
   type OrderStatus,
@@ -49,6 +51,7 @@ export class OrderService {
     private readonly inventory: InventoryService,
     private readonly users: UserRepository,
     private readonly config: ConfigService<EnvTypes, true>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async checkout(input: CheckoutInput) {
@@ -439,22 +442,51 @@ export class OrderService {
   }
 
   async applyTransaction(reference: string, status: TransactionStatus) {
-    const row = await this.orders.findOne({
-      where: [{ transactionReference: reference }, { orderNumber: reference }],
-    });
-    if (!row) return;
-    if (status === TransactionStatus.SUCCESS && row.paymentStatus !== 'paid') {
-      row.paymentStatus = 'paid';
-      row.timeline = row.timeline.map((step) =>
-        step.id === 'payment'
-          ? { ...step, status: 'done', at: new Date().toISOString() }
-          : step,
+    if (status !== TransactionStatus.SUCCESS) return;
+    const paid = await this.dataSource.transaction(async (manager) => {
+      const rows = queryRows(
+        await manager.query(
+          `UPDATE shop_order AS o
+         SET payment_status = 'paid',
+             timeline = (
+               SELECT COALESCE(jsonb_agg(
+                 CASE
+                   WHEN elem->>'id' = 'payment' THEN jsonb_set(
+                     jsonb_set(elem, '{status}', '"done"'::jsonb),
+                     '{at}',
+                     to_jsonb(to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+                   )
+                   ELSE elem
+                 END
+                 ORDER BY ord
+               ), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(o.timeline, '[]'::jsonb))
+                 WITH ORDINALITY AS t(elem, ord)
+             ),
+             updated_at = NOW()
+         WHERE (o.transaction_reference = $1 OR o.order_number = $1)
+           AND o.payment_status <> 'paid'
+           AND o.deleted_at IS NULL
+         RETURNING o.id, o.items`,
+          [reference],
+        ),
       );
-      await this.orders.save(row);
-      for (const item of row.items) {
-        await this.inventory.commitReserved(item.productId, item.qty);
+      const row = rows[0] ?? null;
+      if (!row) return null;
+      const items = orderItems(row.items);
+      for (const item of items) {
+        await manager.query(
+          `UPDATE inventory
+           SET reserved = GREATEST(reserved - $2, 0),
+               quantity = GREATEST(quantity - $2, 0),
+               updated_at = NOW()
+           WHERE product_id = $1`,
+          [item.productId, item.qty],
+        );
       }
-    }
+      return row.id;
+    });
+    return paid;
   }
 
   async adminSetStatus(id: string, status: OrderStatus) {
@@ -467,25 +499,49 @@ export class OrderService {
 
   @Cron(CronExpression.EVERY_30_MINUTES)
   async cancelUnpaid() {
-    const hours = this.config.get('commerce.unpaidCancelHours', {
-      infer: true,
-    });
-    const cutoff = new Date(Date.now() - hours * 3600_000);
-    const stale = await this.orders.find({
-      where: {
-        paymentStatus: 'unpaid' as PaymentStatus,
-        paymentMethod: 'bank',
-        createdAt: LessThan(cutoff),
+    await withAdvisoryLock(
+      this.dataSource,
+      ADVISORY_LOCK.orderCancelUnpaid,
+      async () => {
+        const hours = this.config.get('commerce.unpaidCancelHours', {
+          infer: true,
+        });
+        const cutoff = new Date(Date.now() - hours * 3600_000);
+        const stale = await this.orders.find({
+          where: {
+            paymentStatus: 'unpaid' as PaymentStatus,
+            paymentMethod: 'bank',
+            createdAt: LessThan(cutoff),
+          },
+        });
+        for (const order of stale) {
+          await this.dataSource.transaction(async (manager) => {
+            const rows = queryRows(
+              await manager.query(
+                `UPDATE shop_order
+                 SET status = 'cancelled', updated_at = NOW()
+                 WHERE id = $1
+                   AND payment_status <> 'paid'
+                   AND status <> 'cancelled'
+                   AND deleted_at IS NULL
+                 RETURNING id, items`,
+                [order.id],
+              ),
+            );
+            const changed = rows[0] ?? null;
+            if (!changed) return;
+            for (const item of orderItems(changed.items)) {
+              await manager.query(
+                `UPDATE inventory
+                 SET reserved = GREATEST(reserved - $2, 0), updated_at = NOW()
+                 WHERE product_id = $1`,
+                [item.productId, item.qty],
+              );
+            }
+          });
+        }
       },
-    });
-    for (const order of stale) {
-      if (order.status === 'cancelled') continue;
-      order.status = 'cancelled';
-      await this.orders.save(order);
-      for (const item of order.items) {
-        await this.inventory.releaseReserved(item.productId, item.qty);
-      }
-    }
+    );
   }
 
   private trackLabel(status: OrderStatus) {
@@ -569,4 +625,27 @@ export class OrderService {
       transactionReference: order.transactionReference,
     };
   }
+}
+
+function orderItems(value: unknown): Array<{ productId: string; qty: number }> {
+  let parsed: unknown = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  const items: Array<{ productId: string; qty: number }> = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object') continue;
+    const productId = (entry as { productId?: unknown }).productId;
+    const qty = (entry as { qty?: unknown }).qty;
+    if (typeof productId !== 'string') continue;
+    const amount = typeof qty === 'number' ? qty : Number(qty);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    items.push({ productId, qty: amount });
+  }
+  return items;
 }
