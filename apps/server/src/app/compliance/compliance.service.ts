@@ -9,7 +9,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EnvTypes } from '@app/shared';
 import { parseRateLimitEnabled } from '@app/shared';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { CourseEntity } from '../course/entities/course.entity';
 import { EnterFirstService } from '../enter-first/enter-first.service';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
@@ -19,6 +19,7 @@ import { resolveProgram } from '../program/core30';
 import { OrgSettingsService } from '../org-settings/org-settings.service';
 import type { CreateDataRequestDto } from './dto/compliance.dto';
 import { DataRequestEntity } from './entities/data-request.entity';
+import { ADVISORY_LOCK, withAdvisoryLock } from '../../common/db/advisory-lock';
 
 @Injectable()
 export class ComplianceService {
@@ -34,6 +35,7 @@ export class ComplianceService {
     private readonly enterFirst: EnterFirstService,
     private readonly settings: OrgSettingsService,
     private readonly config: ConfigService<EnvTypes, true>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async summary(from?: string, to?: string, program?: string) {
@@ -350,6 +352,14 @@ export class ComplianceService {
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async runRetentionCleanup() {
+    await withAdvisoryLock(
+      this.dataSource,
+      ADVISORY_LOCK.complianceRetention,
+      () => this.retainExpiredEnrollments(),
+    );
+  }
+
+  private async retainExpiredEnrollments() {
     const settings = await this.settings.get();
     const abandonedBefore = daysAgo(settings.retentionAbandonedDays);
     const paidBefore = daysAgo(settings.retentionPaidDays);

@@ -19,6 +19,7 @@ import { coursesForProgram } from './course-catalogue';
 import {
   CourseMediaError,
   courseMediaFields,
+  normalizeAfterPaymentEmail,
   normalizeSyllabusText,
   prepareCourseImage,
   prepareCourseSyllabusPdf,
@@ -140,6 +141,9 @@ export class CourseService {
         status,
         sortOrder: dto.sortOrder ?? 0,
         cohort: dto.cohort?.trim() || null,
+        afterPaymentEmail: await fromMedia(() =>
+          normalizeAfterPaymentEmail(dto.afterPaymentEmail),
+        ),
       }),
     );
     if (row.price != null) {
@@ -192,6 +196,11 @@ export class CourseService {
     if (dto.status !== undefined) row.status = dto.status;
     if (dto.sortOrder !== undefined) row.sortOrder = dto.sortOrder;
     if (dto.cohort !== undefined) row.cohort = dto.cohort?.trim() || null;
+    if (dto.afterPaymentEmail !== undefined) {
+      row.afterPaymentEmail = await fromMedia(() =>
+        normalizeAfterPaymentEmail(dto.afterPaymentEmail),
+      );
+    }
     await this.courses.save(row);
     if (row.price !== previous.price || row.currency !== previous.currency) {
       await this.history.save(
@@ -568,6 +577,9 @@ export class CourseService {
     return {
       ...(await this.toPublicDto(row)),
       enrollmentCount: await this.enrollmentCount(row.slug, row.program),
+      afterPaymentEmail: row.afterPaymentEmail?.trim()
+        ? row.afterPaymentEmail
+        : null,
       createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
       updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
     };

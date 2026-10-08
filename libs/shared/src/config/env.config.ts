@@ -59,6 +59,17 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional().default(''),
   RESEND_FROM_EMAIL: z.string().default('no-reply@aurora.local'),
   RESEND_FROM_NAME: z.string().default('Aurora Stores'),
+  /** Preferred From address. Falls back to RESEND_FROM_EMAIL when empty. */
+  EMAIL_FROM: z.string().optional().default(''),
+  /** Preferred From name. Falls back to RESEND_FROM_NAME when empty. */
+  EMAIL_FROM_NAME: z.string().optional().default(''),
+  /**
+   * Comma-separated addresses. When set, mail is sent only to these addresses.
+   * Ignored when EMAIL_REDIRECT_TO is set.
+   */
+  EMAIL_ALLOWLIST: z.string().optional().default(''),
+  /** When set, every outbound message is delivered to this address instead. */
+  EMAIL_REDIRECT_TO: z.string().optional().default(''),
   RESEND_WEBHOOK_SECRET: z.string().optional().default(''),
   UNSUBSCRIBE_TOKEN_SECRET: z.string().optional().default(''),
   EMAIL_MAX_ATTEMPTS: z.coerce.number().default(5),
@@ -252,11 +263,13 @@ export function config() {
     },
     email: {
       apiKey: env.RESEND_API_KEY,
-      fromEmail: env.RESEND_FROM_EMAIL,
-      fromName: env.RESEND_FROM_NAME,
+      fromEmail: env.EMAIL_FROM.trim() || env.RESEND_FROM_EMAIL,
+      fromName: env.EMAIL_FROM_NAME.trim() || env.RESEND_FROM_NAME,
       webhookSecret: env.RESEND_WEBHOOK_SECRET,
       maxAttempts: Math.min(10, Math.max(1, env.EMAIL_MAX_ATTEMPTS)),
       batchSize: Math.min(100, Math.max(1, env.EMAIL_BATCH_SIZE)),
+      allowlist: env.EMAIL_ALLOWLIST,
+      redirectTo: env.EMAIL_REDIRECT_TO.trim(),
     },
     unsubscribe: {
       secret: env.UNSUBSCRIBE_TOKEN_SECRET || env.JWT_SECRET_KEY,

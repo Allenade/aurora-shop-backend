@@ -57,6 +57,10 @@ export class MailService {
     return { emailed: true };
   }
 
+  /**
+   * Legacy single-course confirmation. Paid enrollments use the queued
+   * combined after-payment email instead, so this is not called on success.
+   */
   async sendEnterFirstConfirmation(input: {
     email: string;
     firstName: string;

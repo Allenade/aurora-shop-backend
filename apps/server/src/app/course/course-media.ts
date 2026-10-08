@@ -11,6 +11,7 @@ export class CourseMediaError extends Error {
 export const COURSE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const COURSE_SYLLABUS_PDF_MAX_BYTES = 10 * 1024 * 1024;
 export const COURSE_SYLLABUS_TEXT_MAX_CHARS = 50_000;
+export const AFTER_PAYMENT_EMAIL_MAX_CHARS = 20_000;
 
 const IMAGE_MIME = {
   jpeg: 'image/jpeg',
@@ -143,6 +144,27 @@ export function normalizeSyllabusText(value?: string | null): string | null {
   if (trimmed.length > COURSE_SYLLABUS_TEXT_MAX_CHARS) {
     throw new CourseMediaError(
       `Syllabus text exceeds ${COURSE_SYLLABUS_TEXT_MAX_CHARS} characters`,
+    );
+  }
+  const clean = sanitizeSyllabusHtml(trimmed);
+  const visible = clean
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#160;/g, ' ')
+    .trim();
+  return visible ? clean : null;
+}
+
+/** Sanitized HTML for the post-payment joining message. Blank clears it. */
+export function normalizeAfterPaymentEmail(
+  value?: string | null,
+): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > AFTER_PAYMENT_EMAIL_MAX_CHARS) {
+    throw new CourseMediaError(
+      `After-payment email exceeds ${AFTER_PAYMENT_EMAIL_MAX_CHARS} characters`,
     );
   }
   const clean = sanitizeSyllabusHtml(trimmed);

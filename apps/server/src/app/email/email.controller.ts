@@ -35,8 +35,13 @@ import type { EnvTypes } from '@app/shared';
 import {
   CreateCampaignDto,
   PreviewAudienceDto,
+  PreviewSelectorsDto,
+  SaveDraftDto,
+  ScheduleDraftDto,
   SendEmailDto,
   TestSendDto,
+  TestToMeDto,
+  UpdateDraftDto,
   UpdateTemplateDto,
   UpsertTemplateDto,
 } from './dto/email.dto';
@@ -111,6 +116,161 @@ export class EmailController {
   })
   preview(@Body() body: PreviewAudienceDto) {
     return this.emails.preview(body);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/recipients/preview')
+  @RequirePermissions({ action: Action.READ, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'previewEmailRecipients',
+    summary: 'Preview merged recipients',
+    description:
+      'Merges selectors (allPaid, course:<courseId>, ageGroup:<range>, student:<enrollmentId or email>), de-duplicates by email, and returns the count plus a sample.',
+  })
+  previewRecipients(@Body() body: PreviewSelectorsDto) {
+    return this.emails.previewSelectors(body);
+  }
+
+  @ApiBearerAuth()
+  @Get('admin/emails/students/search')
+  @RequirePermissions({ action: Action.READ, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'searchEmailStudents',
+    summary: 'Search students for the To field',
+    description:
+      'Matches name or email. Each item includes email and the course titles on that enrollment.',
+  })
+  searchStudents(@Query('q') q = '', @Query('limit') limit?: string) {
+    return this.emails.searchStudents(q, limit);
+  }
+
+  @ApiBearerAuth()
+  @Get('admin/emails/drafts')
+  @RequirePermissions({ action: Action.LIST, resource: Resource.EMAIL })
+  @ApiOperation({ operationId: 'listEmailDrafts', summary: 'List drafts' })
+  listDrafts() {
+    return this.emails.listDrafts();
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/drafts')
+  @RequirePermissions({ action: Action.CREATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'saveEmailDraft',
+    summary: 'Save a draft',
+  })
+  saveDraft(@Body() body: SaveDraftDto, @CurrentUser('sub') userId: string) {
+    return this.emails.saveDraft(body, userId);
+  }
+
+  @ApiBearerAuth()
+  @Get('admin/emails/drafts/:id')
+  @RequirePermissions({ action: Action.READ, resource: Resource.EMAIL })
+  @ApiOperation({ operationId: 'getEmailDraft', summary: 'Get a draft' })
+  getDraft(@Param('id') id: string) {
+    return this.emails.getDraft(id);
+  }
+
+  @ApiBearerAuth()
+  @Patch('admin/emails/drafts/:id')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.EMAIL })
+  @ApiOperation({ operationId: 'updateEmailDraft', summary: 'Edit a draft' })
+  updateDraft(@Param('id') id: string, @Body() body: UpdateDraftDto) {
+    return this.emails.updateDraft(id, body);
+  }
+
+  @ApiBearerAuth()
+  @Delete('admin/emails/drafts/:id')
+  @RequirePermissions({ action: Action.DELETE, resource: Resource.EMAIL })
+  @ApiOperation({ operationId: 'deleteEmailDraft', summary: 'Delete a draft' })
+  deleteDraft(@Param('id') id: string) {
+    return this.emails.deleteDraft(id);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/drafts/:id/schedule')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'scheduleEmailDraft',
+    summary: 'Schedule a draft',
+    description:
+      'Stores sendAt. The scheduler enqueues the draft when that datetime is due.',
+  })
+  scheduleDraft(@Param('id') id: string, @Body() body: ScheduleDraftDto) {
+    return this.emails.scheduleDraft(id, body);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/drafts/:id/send')
+  @RequirePermissions({ action: Action.CREATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'sendEmailDraft',
+    summary: 'Send a draft now',
+    description:
+      'One message per recipient, single To. Does not put recipients on CC or BCC.',
+  })
+  sendDraft(@Param('id') id: string) {
+    return this.emails.sendDraftNow(id);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/drafts/:id/test')
+  @RequirePermissions({ action: Action.CREATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'testEmailDraftToMe',
+    summary: 'Send this draft to me',
+    description: 'Sends only to the logged-in admin email.',
+  })
+  testDraft(@Param('id') id: string, @CurrentUser('email') email: string) {
+    return this.emails.sendDraftTest(id, email);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/test-to-me')
+  @RequirePermissions({ action: Action.CREATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'sendTestEmailToMe',
+    summary: 'Send a test to me',
+    description:
+      'Sends only to the logged-in admin email. The body cannot choose another recipient.',
+  })
+  testToMe(@CurrentUser('email') email: string, @Body() body: TestToMeDto) {
+    return this.emails.sendTestToAdmin(email, body);
+  }
+
+  @ApiBearerAuth()
+  @Get('admin/emails/sent')
+  @RequirePermissions({ action: Action.LIST, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'listSentEmails',
+    summary: 'List sent emails',
+    description: 'Each row includes sentCount and failedCount.',
+  })
+  listSent() {
+    return this.emails.listSent();
+  }
+
+  @ApiBearerAuth()
+  @Get('admin/emails/sent/:id')
+  @RequirePermissions({ action: Action.READ, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'getSentEmail',
+    summary: 'Sent email detail',
+    description: 'Includes per-recipient status.',
+  })
+  getSent(@Param('id') id: string) {
+    return this.emails.getSent(id);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/sent/:id/resend-failed')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'resendFailedEmails',
+    summary: 'Resend to failed recipients',
+  })
+  resendFailed(@Param('id') id: string) {
+    return this.emails.resendFailed(id);
   }
 
   @ApiBearerAuth()

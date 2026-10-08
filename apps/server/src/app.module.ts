@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { RedisThrottlerStorage } from './common/http/redis-throttler.storage';
 import { LoggerModule } from 'nestjs-pino';
 import { AdminModule } from './app/admin/admin.module';
 import { AuditLogModule } from './app/audit-log/audit-log.module';
@@ -35,19 +36,25 @@ import { MailModule } from './app/mail/mail.module';
       envFilePath: ['.env.local', '.env'],
       load: [config],
     }),
-    ThrottlerModule.forRoot({
-      throttlers: [
-        {
-          ttl: 60_000,
-          limit: Math.min(
-            300,
-            Math.max(
-              1,
-              Number(process.env.ENTER_FIRST_PUBLIC_RATE_LIMIT) || 20,
-            ),
-          ),
-        },
-      ],
+    ThrottlerModule.forRootAsync({
+      useFactory: () => {
+        const redisUrl = process.env.REDIS_URL?.trim();
+        return {
+          throttlers: [
+            {
+              ttl: 60_000,
+              limit: Math.min(
+                300,
+                Math.max(
+                  1,
+                  Number(process.env.ENTER_FIRST_PUBLIC_RATE_LIMIT) || 20,
+                ),
+              ),
+            },
+          ],
+          ...(redisUrl ? { storage: new RedisThrottlerStorage(redisUrl) } : {}),
+        };
+      },
     }),
     ScheduleModule.forRoot(),
     LoggerModule.forRootAsync(createLoggerModuleOpts('aurora-server')),
