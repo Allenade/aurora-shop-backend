@@ -70,7 +70,7 @@ export class EnterFirstController {
   @ApiOperation({
     operationId: 'listEnterFirstEnrollments',
     summary: 'List Enter First enrollments',
-    description: `Website / Enter First payment enrollments for admin. Defaults to program Core 3.0. compliance_viewer responses mask PII. ${ENROLLMENT_LIST_QUERY_DOCS}`,
+    description: `Website / Enter First payment enrollments for admin. Defaults to program Core 3.0. Each item includes emailStatus (null, pending, sending, sent, failed), emailSentAt, and emailError. compliance_viewer responses mask PII. ${ENROLLMENT_LIST_QUERY_DOCS}`,
   })
   async list(
     @CurrentUser() user: JwtPayload,
@@ -105,6 +105,19 @@ export class EnterFirstController {
   async get(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
     return this.enterFirst.getById(id, maskPii);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/enter-first/enrollments/:id/resend-confirmation')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.ENTER_FIRST })
+  @ApiOperation({
+    operationId: 'resendEnterFirstConfirmation',
+    summary: 'Resend the after-payment email',
+    description:
+      'Admin resend for one paid enrollment. Bypasses the one-time claim and queues a single email to the payer. Failed or unpaid enrollments are rejected.',
+  })
+  resendConfirmation(@Param('id') id: string) {
+    return this.enterFirst.resendConfirmation(id);
   }
 
   @ApiBearerAuth()

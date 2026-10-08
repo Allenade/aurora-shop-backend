@@ -86,6 +86,13 @@ export class CourseEntity extends DatabaseEntity {
   @Column({ name: 'syllabus_text', type: 'text', nullable: true })
   syllabusText?: string | null;
 
+  /**
+   * Optional sanitized HTML emailed after a successful Paystack payment.
+   * Includes the joining link (WhatsApp, Meet, Zoom, and so on). Admin only.
+   */
+  @Column({ name: 'after_payment_email', type: 'text', nullable: true })
+  afterPaymentEmail?: string | null;
+
   @OneToMany(() => CoursePriceHistoryEntity, (row) => row.course)
   priceHistory?: CoursePriceHistoryEntity[];
 }

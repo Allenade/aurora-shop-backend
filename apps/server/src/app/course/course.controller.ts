@@ -116,7 +116,7 @@ export class CourseController {
     operationId: 'createCourse',
     summary: 'Create course',
     description:
-      'Price is optional and is never defaulted. Publishing (status open) a paid course without a price returns 400. Mark the course free or set a price first.',
+      'Price is optional and is never defaulted. Publishing (status open) a paid course without a price returns 400. Mark the course free or set a price first. afterPaymentEmail is optional sanitized HTML (the joining link) stored for the admin and omitted from public course responses.',
   })
   create(@Body() body: UpsertCourseDto, @CurrentUser('sub') userId: string) {
     return this.courses.create(body, userId);

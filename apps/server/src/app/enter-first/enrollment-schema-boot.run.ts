@@ -5,6 +5,7 @@ import { Core30Compliance1735689600000 } from '@app/shared/database/migrations/1
 import { CoursePriceNullable1735689700000 } from '@app/shared/database/migrations/1735689700000-CoursePriceNullable';
 import { EnrollmentColumnAlign1735689800000 } from '@app/shared/database/migrations/1735689800000-EnrollmentColumnAlign';
 import { Core30Program1735690100000 } from '@app/shared/database/migrations/1735690100000-Core30Program';
+import { CourseAfterPaymentEmail1735690500000 } from '@app/shared/database/migrations/1735690500000-CourseAfterPaymentEmail';
 import { EnterFirstEnrollmentEntity } from './entities/enter-first-enrollment.entity';
 
 const databaseUrl =
@@ -19,6 +20,7 @@ const migrations = [
   CoursePriceNullable1735689700000,
   EnrollmentColumnAlign1735689800000,
   Core30Program1735690100000,
+  CourseAfterPaymentEmail1735690500000,
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {

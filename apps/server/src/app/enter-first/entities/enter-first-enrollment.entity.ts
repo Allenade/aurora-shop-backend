@@ -131,6 +131,25 @@ export class EnterFirstEnrollmentEntity extends DatabaseEntity {
   @Column({ name: 'email_sent_at', type: 'timestamptz', nullable: true })
   emailSentAt?: Date;
 
+  /** null or pending can be claimed. sending, sent, and failed cannot. */
+  @Column({
+    name: 'confirmation_email_status',
+    type: 'varchar',
+    length: 16,
+    nullable: true,
+  })
+  confirmationEmailStatus?: 'pending' | 'sending' | 'sent' | 'failed' | null;
+
+  @Column({
+    name: 'confirmation_email_claimed_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  confirmationEmailClaimedAt?: Date | null;
+
+  @Column({ name: 'confirmation_email_error', type: 'text', nullable: true })
+  confirmationEmailError?: string | null;
+
   @Column({
     name: 'terms_version',
     type: 'varchar',

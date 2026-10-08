@@ -189,6 +189,11 @@ describe('course image and syllabus fields', () => {
       service.indexOf('private async toAdminDto('),
     );
     expect(publicDto).toContain('...courseMediaFields(row)');
+    expect(publicDto).not.toContain('afterPaymentEmail');
+    const adminDto = service.slice(
+      service.indexOf('private async toAdminDto('),
+    );
+    expect(adminDto).toContain('afterPaymentEmail');
 
     const detail = service.slice(
       service.indexOf('async getPublic('),

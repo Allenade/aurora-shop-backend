@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { toShopProduct } from '../catalog/catalog.service';
 import { ProductEntity } from '../catalog/entities/product.entity';
 import { InventoryEntity } from './entities/inventory.entity';
+import { queryRows } from '../../common/db/query-rows';
 
 @Injectable()
 export class InventoryService {
@@ -91,34 +92,51 @@ export class InventoryService {
   }
 
   async restock(productId: string, quantity: number) {
-    const row = await this.inventory.findOne({ where: { productId } });
-    if (!row) throw new NotFoundException('Inventory row not found');
-    row.quantity += quantity;
-    await this.inventory.save(row);
-    return { ok: true, quantity: row.quantity };
+    const rows = queryRows(
+      await this.inventory.query(
+        `UPDATE inventory
+         SET quantity = quantity + $2, updated_at = NOW()
+         WHERE product_id = $1
+         RETURNING quantity`,
+        [productId, quantity],
+      ),
+    );
+    const updated = rows[0];
+    if (!updated) throw new NotFoundException('Inventory row not found');
+    return { ok: true, quantity: Number(updated.quantity) };
   }
 
   async reserve(productId: string, qty: number) {
-    const row = await this.inventory.findOne({ where: { productId } });
-    if (!row || row.quantity - row.reserved < qty) {
-      throw new NotFoundException('Insufficient stock');
-    }
-    row.reserved += qty;
-    await this.inventory.save(row);
+    const rows = queryRows(
+      await this.inventory.query(
+        `UPDATE inventory
+         SET reserved = reserved + $2, updated_at = NOW()
+         WHERE product_id = $1
+           AND quantity - reserved >= $2
+         RETURNING reserved`,
+        [productId, qty],
+      ),
+    );
+    if (!rows[0]) throw new NotFoundException('Insufficient stock');
   }
 
   async commitReserved(productId: string, qty: number) {
-    const row = await this.inventory.findOne({ where: { productId } });
-    if (!row) return;
-    row.reserved = Math.max(0, row.reserved - qty);
-    row.quantity = Math.max(0, row.quantity - qty);
-    await this.inventory.save(row);
+    await this.inventory.query(
+      `UPDATE inventory
+       SET reserved = GREATEST(reserved - $2, 0),
+           quantity = GREATEST(quantity - $2, 0),
+           updated_at = NOW()
+       WHERE product_id = $1`,
+      [productId, qty],
+    );
   }
 
   async releaseReserved(productId: string, qty: number) {
-    const row = await this.inventory.findOne({ where: { productId } });
-    if (!row) return;
-    row.reserved = Math.max(0, row.reserved - qty);
-    await this.inventory.save(row);
+    await this.inventory.query(
+      `UPDATE inventory
+       SET reserved = GREATEST(reserved - $2, 0), updated_at = NOW()
+       WHERE product_id = $1`,
+      [productId, qty],
+    );
   }
 }

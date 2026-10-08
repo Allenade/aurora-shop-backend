@@ -11,6 +11,7 @@ import { Core30Program1735690100000 } from './migrations/1735690100000-Core30Pro
 import { CourseSlugReuse1735690200000 } from './migrations/1735690200000-CourseSlugReuse';
 import { CoursePriceHistoryCascade1735690300000 } from './migrations/1735690300000-CoursePriceHistoryCascade';
 import { CourseImageSyllabus1735690400000 } from './migrations/1735690400000-CourseImageSyllabus';
+import { CourseAfterPaymentEmail1735690500000 } from './migrations/1735690500000-CourseAfterPaymentEmail';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { CourseImageSyllabus1735690400000 } from './migrations/1735690400000-Cou
             CourseSlugReuse1735690200000,
             CoursePriceHistoryCascade1735690300000,
             CourseImageSyllabus1735690400000,
+            CourseAfterPaymentEmail1735690500000,
           ],
           migrationsRun: true,
           logging: false,

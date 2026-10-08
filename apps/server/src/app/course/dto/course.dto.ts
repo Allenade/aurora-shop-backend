@@ -13,7 +13,10 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { COURSE_SYLLABUS_TEXT_MAX_CHARS } from '../course-media';
+import {
+  AFTER_PAYMENT_EMAIL_MAX_CHARS,
+  COURSE_SYLLABUS_TEXT_MAX_CHARS,
+} from '../course-media';
 import type { CourseStatus } from '../course-pricing';
 
 const STATUSES: CourseStatus[] = ['draft', 'open', 'closed', 'archived'];
@@ -96,6 +99,17 @@ export class UpsertCourseDto {
   @IsOptional()
   @ApiPropertyOptional()
   cohort?: string | null;
+
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(AFTER_PAYMENT_EMAIL_MAX_CHARS)
+  @IsOptional()
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Sanitized HTML sent after a successful payment, including the joining link. Null or blank clears it. Omitted from public course endpoints.',
+  })
+  afterPaymentEmail?: string | null;
 }
 
 export class UpdateCourseDto {
@@ -171,6 +185,17 @@ export class UpdateCourseDto {
   @IsOptional()
   @ApiPropertyOptional()
   cohort?: string | null;
+
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(AFTER_PAYMENT_EMAIL_MAX_CHARS)
+  @IsOptional()
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Sanitized HTML sent after a successful payment, including the joining link. Null or blank clears it. Omitted from public course endpoints.',
+  })
+  afterPaymentEmail?: string | null;
 }
 
 export class UpdateCourseSyllabusTextDto {
