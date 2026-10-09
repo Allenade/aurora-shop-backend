@@ -115,6 +115,10 @@ export class EmailCampaignEntity extends DatabaseEntity {
 
   @Column({ name: 'scheduled_at', type: 'timestamptz', nullable: true })
   scheduledAt?: Date | null;
+
+  /** When set, the sent campaign is in the Hidden list. */
+  @Column({ name: 'hidden_at', type: 'timestamptz', nullable: true })
+  hiddenAt?: Date | null;
 }
 
 @Entity('email_message')

@@ -253,6 +253,21 @@ const DASHBOARD_ROUTES: ExpectedRoute[] = [
   },
   { method: 'Get', path: 'admin/emails/sent', permission: 'LIST email' },
   {
+    method: 'Post',
+    path: 'admin/emails/sent/hide',
+    permission: 'UPDATE email',
+  },
+  {
+    method: 'Post',
+    path: 'admin/emails/sent/unhide',
+    permission: 'UPDATE email',
+  },
+  {
+    method: 'Delete',
+    path: 'admin/emails/sent',
+    permission: 'DELETE email',
+  },
+  {
     method: 'Get',
     path: 'admin/emails/sent/:id',
     permission: 'READ email',
