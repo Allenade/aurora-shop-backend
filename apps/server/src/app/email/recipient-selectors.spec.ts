@@ -1,4 +1,5 @@
 import {
+  canonicalSelector,
   dedupeComposeRecipients,
   parseAgeGroup,
   parseSelector,
@@ -52,12 +53,26 @@ describe('recipient selectors', () => {
       enrollmentId: '22222222-2222-4222-8222-222222222222',
     });
     expect(parseAgeGroup('max:17,min:13')).toEqual({ min: 13, max: 17 });
+    expect(parseSelector('email:  Ada.Okoye@Gmail.com ')).toEqual({
+      type: 'email',
+      email: 'ada.okoye@gmail.com',
+    });
+    expect(canonicalSelector('email:  Ada.Okoye@Gmail.com ')).toBe(
+      'email:ada.okoye@gmail.com',
+    );
   });
 
   it('rejects unknown selectors and inverted age ranges', () => {
     expect(() => parseSelector('everyone')).toThrow(/Unknown selector/);
     expect(() => parseSelector('course:iot')).toThrow(/course id/);
     expect(() => parseSelector('ageGroup:17-13')).toThrow(/Invalid age group/);
+    expect(() => parseSelector('email:')).toThrow(/Invalid email address/);
+    expect(() => parseSelector('email:not-an-email')).toThrow(
+      /Invalid email address/,
+    );
+    expect(() => parseSelector('email:ada@mailinator.com')).toThrow(
+      /Invalid email address/,
+    );
   });
 
   it('de-duplicates a merged selector list by email and unions courses', () => {
@@ -104,6 +119,39 @@ describe('recipient selectors', () => {
     expect(merged.map((person) => person.email)).toEqual([
       'ada@example.com',
       'chinedu@example.com',
+    ]);
+  });
+
+  it('counts one person when an outside address is also a course student', () => {
+    const merged = dedupeComposeRecipients([
+      row({
+        email: 'ada.okoye@gmail.com',
+        name: '',
+        enrollmentId: null,
+        courses: [],
+      }),
+      row({
+        email: 'Ada.Okoye@gmail.com',
+        name: 'Ada Okoye',
+        enrollmentId: 'enr-1',
+        courses: ['Robotics'],
+        marketingOptIn: true,
+      }),
+      row({
+        email: 'ada.okoye@gmail.com',
+        name: '',
+        enrollmentId: null,
+        courses: [],
+      }),
+    ]);
+    expect(merged).toEqual([
+      {
+        email: 'ada.okoye@gmail.com',
+        name: 'Ada Okoye',
+        enrollmentId: 'enr-1',
+        courses: ['Robotics'],
+        marketingOptIn: true,
+      },
     ]);
   });
 

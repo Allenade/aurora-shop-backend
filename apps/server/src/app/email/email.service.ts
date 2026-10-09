@@ -9,11 +9,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { EnvTypes } from '@app/shared';
+import { AuditLogType, type EnvTypes } from '@app/shared';
 import { Queue, Worker } from 'bullmq';
 import { randomUUID } from 'crypto';
 import { Brackets, DataSource, In, LessThanOrEqual, Repository } from 'typeorm';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { CourseEntity } from '../course/entities/course.entity';
 import { ADVISORY_LOCK, withAdvisoryLock } from '../../common/db/advisory-lock';
 import { renderEmail } from './email-render';
@@ -27,6 +28,7 @@ import {
   type ConfirmationJobData,
 } from './enrollment-confirmation';
 import {
+  canonicalSelector,
   dedupeComposeRecipients,
   parseSelectors,
   toCourseStudents,
@@ -95,6 +97,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     private readonly courses: Repository<CourseEntity>,
     private readonly config: ConfigService<EnvTypes, true>,
     private readonly dataSource: DataSource,
+    private readonly audit?: AuditLogService,
   ) {}
 
   onModuleInit() {
@@ -965,6 +968,8 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     );
     return {
       count: resolved.recipients.length,
+      notInSystem: resolved.recipients.filter((person) => !person.enrollmentId)
+        .length,
       sample: resolved.recipients.slice(0, 8).map((person) => ({
         email: person.email,
         name: person.name,
@@ -1007,7 +1012,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
   }
 
   async saveDraft(dto: SaveDraftDto, userId?: string) {
-    this.assertSelectors(dto.selectors ?? []);
+    const selectors = this.storedSelectors(dto.selectors ?? []);
     const row = await this.campaigns.save(
       this.campaigns.create({
         name: (dto.name?.trim() || dto.subject.trim()).slice(0, 160),
@@ -1016,7 +1021,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
         text: dto.text ?? '',
         kind: dto.kind ?? 'transactional',
         audience: { kind: 'explicit', emails: [] },
-        selectors: dto.selectors ?? [],
+        selectors,
         status: 'draft',
         totalRecipients: 0,
         sentCount: 0,
@@ -1031,13 +1036,16 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
 
   async updateDraft(id: string, dto: UpdateDraftDto) {
     const row = await this.requireEditableDraft(id);
-    if (dto.selectors) this.assertSelectors(dto.selectors);
+    const selectors =
+      dto.selectors === undefined
+        ? undefined
+        : this.storedSelectors(dto.selectors);
     if (dto.name !== undefined) row.name = dto.name.trim().slice(0, 160);
     if (dto.subject !== undefined) row.subject = dto.subject;
     if (dto.html !== undefined) row.html = dto.html;
     if (dto.text !== undefined) row.text = dto.text;
     if (dto.kind !== undefined) row.kind = dto.kind;
-    if (dto.selectors !== undefined) row.selectors = dto.selectors;
+    if (selectors !== undefined) row.selectors = selectors;
     await this.campaigns.save(row);
     return toDraft(row);
   }
@@ -1077,7 +1085,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     return toDraft(row);
   }
 
-  async sendDraftNow(id: string, opts?: { quiet?: boolean }) {
+  async sendDraftNow(id: string, opts?: { quiet?: boolean; userId?: string }) {
     const claimed = await this.campaigns
       .createQueryBuilder()
       .update(EmailCampaignEntity)
@@ -1133,6 +1141,11 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       attachments: row.attachments ?? [],
     });
     await this.enqueue(created.map((message) => message.id));
+    this.recordOutsideSend(
+      row.id,
+      opts?.userId ?? row.createdBy,
+      resolved.recipients,
+    );
     return { ...toCampaign(row), queued: created.length };
   }
 
@@ -1212,6 +1225,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
         attempts: message.attempts,
         lastError: message.lastError ?? null,
         resendId: message.resendId ?? null,
+        inSystem: Boolean(message.enrollmentId),
       })),
     };
   }
@@ -1306,6 +1320,35 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     return `http://localhost:${port}`;
   }
 
+  private storedSelectors(selectors: string[]): string[] {
+    try {
+      return selectors.map(canonicalSelector);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid selector',
+      );
+    }
+  }
+
+  private recordOutsideSend(
+    campaignId: string,
+    userId: string | null | undefined,
+    recipients: ComposeCandidate[],
+  ) {
+    const outsideEmails = recipients
+      .filter((person) => !person.enrollmentId)
+      .map((person) => person.email);
+    if (!outsideEmails.length || !this.audit) return;
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action: 'EMAIL_OUTSIDE_SEND',
+      userId: userId ?? undefined,
+      resourceType: 'email',
+      resourceId: campaignId,
+      metadata: { outsideEmails },
+    });
+  }
+
   private assertSelectors(selectors: string[]) {
     try {
       return parseSelectors(selectors);
@@ -1385,7 +1428,27 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       );
       return rows.map((row) => this.toCandidate(row, content.titles));
     }
-    if (selector.enrollmentId) {
+    if (selector.type === 'email') {
+      const rows = await this.paidQuery()
+        .andWhere('LOWER(TRIM(e.email)) = :email', { email: selector.email })
+        .getMany();
+      if (!rows.length) {
+        return [
+          {
+            email: selector.email,
+            name: '',
+            enrollmentId: null,
+            courses: [],
+            marketingOptIn: false,
+          },
+        ];
+      }
+      const content = await this.courseContent(
+        rows.flatMap((row) => row.tracks ?? []),
+      );
+      return rows.map((row) => this.toCandidate(row, content.titles));
+    }
+    if (selector.type === 'student' && selector.enrollmentId) {
       const row = await this.enrollments.findOne({
         where: { id: selector.enrollmentId },
       });
@@ -1393,6 +1456,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       const content = await this.courseContent(row.tracks ?? []);
       return [this.toCandidate(row, content.titles)];
     }
+    if (selector.type !== 'student') return [];
     const email = (selector.email ?? '').trim().toLowerCase();
     if (!email) return [];
     const rows = (await this.enrollments.find({ where: { email } })).filter(
