@@ -39,6 +39,7 @@ import {
   SaveDraftDto,
   ScheduleDraftDto,
   SendEmailDto,
+  SentCampaignIdsDto,
   TestSendDto,
   TestToMeDto,
   UpdateDraftDto,
@@ -257,10 +258,55 @@ export class EmailController {
   @ApiOperation({
     operationId: 'listSentEmails',
     summary: 'List sent emails',
-    description: 'Each row includes sentCount and failedCount.',
+    description:
+      'Visible campaigns by default. Pass hidden=true for the Hidden list. Each row includes sentCount, failedCount, and hiddenAt.',
   })
-  listSent() {
-    return this.emails.listSent();
+  listSent(@Query('hidden') hidden?: string) {
+    return this.emails.listSent(hidden);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/sent/hide')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'hideSentEmails',
+    summary: 'Hide sent emails',
+  })
+  hideSent(
+    @Body() body: SentCampaignIdsDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.emails.hideSent(body.ids, userId);
+  }
+
+  @ApiBearerAuth()
+  @Post('admin/emails/sent/unhide')
+  @RequirePermissions({ action: Action.UPDATE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'unhideSentEmails',
+    summary: 'Unhide sent emails',
+  })
+  unhideSent(
+    @Body() body: SentCampaignIdsDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.emails.unhideSent(body.ids, userId);
+  }
+
+  @ApiBearerAuth()
+  @Delete('admin/emails/sent')
+  @RequirePermissions({ action: Action.DELETE, resource: Resource.EMAIL })
+  @ApiOperation({
+    operationId: 'deleteSentEmails',
+    summary: 'Delete hidden sent emails',
+    description:
+      'Permanently deletes hidden campaigns and their recipient rows. Refuses a campaign that is still sending.',
+  })
+  deleteSent(
+    @Body() body: SentCampaignIdsDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.emails.deleteSent(body.ids, userId);
   }
 
   @ApiBearerAuth()
