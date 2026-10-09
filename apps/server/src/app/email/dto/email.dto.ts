@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -282,6 +283,14 @@ export class ScheduleDraftDto {
     example: '2026-10-09T09:00:00.000Z',
   })
   sendAt: string;
+}
+
+export class SentCampaignIdsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsUUID('4', { each: true })
+  @ApiProperty({ type: [String] })
+  ids: string[];
 }
 
 export class TestToMeDto {
