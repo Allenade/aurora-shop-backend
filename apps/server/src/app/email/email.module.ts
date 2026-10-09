@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { CourseEntity } from '../course/entities/course.entity';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
 import { StorageModule } from '../storage/storage.module';
@@ -24,6 +25,7 @@ import {
       CourseEntity,
     ]),
     StorageModule,
+    AuditLogModule,
   ],
   controllers: [EmailController],
   providers: [EmailService, EmailAssetService],

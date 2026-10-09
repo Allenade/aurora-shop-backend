@@ -197,7 +197,7 @@ export class PreviewSelectorsDto {
   @ApiProperty({
     type: [String],
     description:
-      'allPaid, course:<courseId>, ageGroup:<min-max|min+|min=n,max=n>, student:<enrollmentId|email>',
+      'allPaid, course:<courseId>, ageGroup:<min-max|min+|min=n,max=n>, student:<enrollmentId|email>, email:<address>',
     example: ['allPaid', 'ageGroup:13-17'],
   })
   selectors: string[];

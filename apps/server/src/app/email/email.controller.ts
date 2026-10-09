@@ -125,7 +125,7 @@ export class EmailController {
     operationId: 'previewEmailRecipients',
     summary: 'Preview merged recipients',
     description:
-      'Merges selectors (allPaid, course:<courseId>, ageGroup:<range>, student:<enrollmentId or email>), de-duplicates by email, and returns the count plus a sample.',
+      'Merges selectors (allPaid, course:<courseId>, ageGroup:<range>, student:<enrollmentId or email>, email:<address>), de-duplicates by email, and returns the count, notInSystem, and a sample.',
   })
   previewRecipients(@Body() body: PreviewSelectorsDto) {
     return this.emails.previewSelectors(body);
@@ -222,8 +222,8 @@ export class EmailController {
     description:
       'One message per recipient, single To. Does not put recipients on CC or BCC.',
   })
-  sendDraft(@Param('id') id: string) {
-    return this.emails.sendDraftNow(id);
+  sendDraft(@Param('id') id: string, @CurrentUser('sub') userId: string) {
+    return this.emails.sendDraftNow(id, { userId });
   }
 
   @ApiBearerAuth()
