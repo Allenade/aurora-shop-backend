@@ -1,3 +1,5 @@
+import { isDeliverableEmail, normaliseEmail } from './email-safety';
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -5,7 +7,8 @@ export type ParsedSelector =
   | { type: 'allPaid' }
   | { type: 'course'; courseId: string }
   | { type: 'ageGroup'; min: number; max: number }
-  | { type: 'student'; enrollmentId?: string; email?: string };
+  | { type: 'student'; enrollmentId?: string; email?: string }
+  | { type: 'email'; email: string };
 
 export type ComposeCandidate = {
   email: string;
@@ -76,7 +79,21 @@ export function parseSelector(raw: string): ParsedSelector {
     if (UUID_RE.test(value)) return { type: 'student', enrollmentId: value };
     return { type: 'student', email: value.toLowerCase() };
   }
+  if (token.startsWith('email:')) {
+    const email = normaliseEmail(token.slice('email:'.length));
+    if (!isDeliverableEmail(email)) {
+      throw new Error(`Invalid email address: ${token}`);
+    }
+    return { type: 'email', email };
+  }
   throw new Error(`Unknown selector: ${token}`);
+}
+
+/** Stored form of a selector. `email:` addresses are trimmed and lowercased. */
+export function canonicalSelector(raw: string): string {
+  const parsed = parseSelector(raw);
+  if (parsed.type === 'email') return `email:${parsed.email}`;
+  return raw.trim();
 }
 
 export function parseSelectors(selectors: string[]): ParsedSelector[] {

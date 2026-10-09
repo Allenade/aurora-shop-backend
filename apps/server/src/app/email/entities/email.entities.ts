@@ -109,7 +109,7 @@ export class EmailCampaignEntity extends DatabaseEntity {
   @Column({ type: 'jsonb', default: [] })
   attachments: EmailAttachment[];
 
-  /** Compose selectors: allPaid, course:<id>, ageGroup:<range>, student:<id|email>. */
+  /** Compose selectors: allPaid, course:<id>, ageGroup:<range>, student:<id|email>, email:<address>. */
   @Column({ type: 'jsonb', default: [] })
   selectors: string[] = [];
 
