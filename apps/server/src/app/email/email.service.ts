@@ -1085,6 +1085,14 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     return toDraft(row);
   }
 
+  sendDraftNow(
+    id: string,
+    opts: { quiet: true; userId?: string },
+  ): Promise<DraftSendResult | null>;
+  sendDraftNow(
+    id: string,
+    opts?: { quiet?: false; userId?: string },
+  ): Promise<DraftSendResult>;
   async sendDraftNow(id: string, opts?: { quiet?: boolean; userId?: string }) {
     const claimed = await this.campaigns
       .createQueryBuilder()
@@ -1710,6 +1718,8 @@ function toTemplate(row: EmailTemplateEntity) {
     updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
   };
 }
+
+type DraftSendResult = ReturnType<typeof toCampaign> & { queued: number };
 
 function toCampaign(row: EmailCampaignEntity) {
   return {
