@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -12,7 +14,20 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
+  registerDecorator,
+  type ValidationArguments,
 } from 'class-validator';
+import {
+  COURSE_LINK_LABEL_LENGTH_MESSAGE,
+  COURSE_LINK_LABEL_MAX,
+  COURSE_LINK_LABEL_MESSAGE,
+  COURSE_LINK_URL_MAX,
+  COURSE_LINK_URL_MESSAGE,
+  COURSE_LINKS_MAX,
+  COURSE_LINKS_MAX_MESSAGE,
+  isAbsoluteHttpUrl,
+} from '../course-links';
 import {
   AFTER_PAYMENT_EMAIL_MAX_CHARS,
   COURSE_SYLLABUS_TEXT_MAX_CHARS,
@@ -20,6 +35,66 @@ import {
 import type { CourseStatus } from '../course-pricing';
 
 const STATUSES: CourseStatus[] = ['draft', 'open', 'closed', 'archived'];
+
+export class CourseLinkDto {
+  @IsCourseLinkLabel()
+  @ApiProperty({
+    example: 'Course structure',
+    maxLength: COURSE_LINK_LABEL_MAX,
+  })
+  label: string;
+
+  @IsCourseLinkUrl()
+  @ApiProperty({
+    example: 'https://example.com/structure',
+    maxLength: COURSE_LINK_URL_MAX,
+  })
+  url: string;
+}
+
+function IsCourseLinkLabel() {
+  return (object: object, propertyName: string) => {
+    registerDecorator({
+      name: 'isCourseLinkLabel',
+      target: object.constructor,
+      propertyName,
+      validator: {
+        validate: (value: unknown) => linkLabelError(value) == null,
+        defaultMessage: (args?: ValidationArguments) =>
+          linkLabelError(args?.value) ?? COURSE_LINK_LABEL_MESSAGE,
+      },
+    });
+  };
+}
+
+function IsCourseLinkUrl() {
+  return (object: object, propertyName: string) => {
+    registerDecorator({
+      name: 'isCourseLinkUrl',
+      target: object.constructor,
+      propertyName,
+      validator: {
+        validate: (value: unknown) => linkUrlError(value) == null,
+        defaultMessage: () => COURSE_LINK_URL_MESSAGE,
+      },
+    });
+  };
+}
+
+function linkLabelError(value: unknown): string | null {
+  if (typeof value !== 'string') return COURSE_LINK_LABEL_MESSAGE;
+  const label = value.trim();
+  if (!label) return COURSE_LINK_LABEL_MESSAGE;
+  if (label.length > COURSE_LINK_LABEL_MAX) {
+    return COURSE_LINK_LABEL_LENGTH_MESSAGE;
+  }
+  return null;
+}
+
+function linkUrlError(value: unknown): string | null {
+  if (typeof value !== 'string') return COURSE_LINK_URL_MESSAGE;
+  return isAbsoluteHttpUrl(value.trim()) ? null : COURSE_LINK_URL_MESSAGE;
+}
 
 export class UpsertCourseDto {
   @IsString()
@@ -99,6 +174,18 @@ export class UpsertCourseDto {
   @IsOptional()
   @ApiPropertyOptional()
   cohort?: string | null;
+
+  @IsOptional()
+  @IsArray({ message: COURSE_LINKS_MAX_MESSAGE })
+  @ArrayMaxSize(COURSE_LINKS_MAX, { message: COURSE_LINKS_MAX_MESSAGE })
+  @ValidateNested({ each: true })
+  @Type(() => CourseLinkDto)
+  @ApiPropertyOptional({
+    type: [CourseLinkDto],
+    description:
+      'Named public links, ordered as saved. The full list replaces any previous links. An empty list clears them.',
+  })
+  links?: CourseLinkDto[] | null;
 
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
@@ -185,6 +272,18 @@ export class UpdateCourseDto {
   @IsOptional()
   @ApiPropertyOptional()
   cohort?: string | null;
+
+  @IsOptional()
+  @IsArray({ message: COURSE_LINKS_MAX_MESSAGE })
+  @ArrayMaxSize(COURSE_LINKS_MAX, { message: COURSE_LINKS_MAX_MESSAGE })
+  @ValidateNested({ each: true })
+  @Type(() => CourseLinkDto)
+  @ApiPropertyOptional({
+    type: [CourseLinkDto],
+    description:
+      'Named public links, ordered as saved. The full list replaces any previous links. Omit to leave them unchanged. An empty list clears them.',
+  })
+  links?: CourseLinkDto[] | null;
 
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()

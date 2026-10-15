@@ -52,7 +52,7 @@ export class CourseController {
     operationId: 'listEnterFirstCourses',
     summary: 'Public Core 3.0 courses',
     description:
-      'Published Core 3.0 courses loaded from the course table. Only courses created in the compliance dashboard and then published are returned. There is no built-in course list. Draft, closed, archived, and paid courses with no price are omitted. Each course includes imageUrl and syllabus (url, filename, text), which are null until an admin uploads them. The enroll endpoint ignores any client-supplied amount.',
+      'Published Core 3.0 courses loaded from the course table. Only courses created in the compliance dashboard and then published are returned. There is no built-in course list. Draft, closed, archived, and paid courses with no price are omitted. Each course includes imageUrl, syllabus (url, filename, text), and links ({ label, url } in the saved order). Image and syllabus are null until an admin uploads them. links is an empty list until an admin adds some. The enroll endpoint ignores any client-supplied amount.',
   })
   listPublic() {
     return this.courses.listPublic(CORE_30_PROGRAM);
@@ -66,7 +66,7 @@ export class CourseController {
     operationId: 'getEnterFirstCourse',
     summary: 'Public Core 3.0 course',
     description:
-      'One published Core 3.0 course by slug, including imageUrl and syllabus. Draft, closed, archived, and paid courses with no price return 404.',
+      'One published Core 3.0 course by slug, including imageUrl, syllabus, and links ({ label, url } in the saved order). Draft, closed, archived, and paid courses with no price return 404.',
   })
   getPublic(@Param('slug') slug: string) {
     return this.courses.getPublic(slug);
@@ -79,7 +79,7 @@ export class CourseController {
     operationId: 'listAdminCourses',
     summary: 'List courses',
     description:
-      'Courses stored in the course table for one program. Defaults to Core 3.0. Used for course management and for enrollment or payment course filters. Returns an empty list when no courses have been created. Prices come from each row. Each course includes imageUrl and syllabus (url, filename, text).',
+      'Courses stored in the course table for one program. Defaults to Core 3.0. Used for course management and for enrollment or payment course filters. Returns an empty list when no courses have been created. Prices come from each row. Each course includes imageUrl, syllabus (url, filename, text), and links ({ label, url } in the saved order).',
   })
   listAdmin(@Query('program') program?: string) {
     return this.courses.listAdmin(resolveProgram(program));
@@ -116,7 +116,7 @@ export class CourseController {
     operationId: 'createCourse',
     summary: 'Create course',
     description:
-      'Price is optional and is never defaulted. Publishing (status open) a paid course without a price returns 400. Mark the course free or set a price first. afterPaymentEmail is optional sanitized HTML (the joining link) stored for the admin and omitted from public course responses.',
+      'Price is optional and is never defaulted. Publishing (status open) a paid course without a price returns 400. Mark the course free or set a price first. links replaces the named public links. afterPaymentEmail is optional sanitized HTML (the joining link) stored for the admin and omitted from public course responses.',
   })
   create(@Body() body: UpsertCourseDto, @CurrentUser('sub') userId: string) {
     return this.courses.create(body, userId);
@@ -140,7 +140,7 @@ export class CourseController {
     operationId: 'updateCourse',
     summary: 'Update course',
     description:
-      'Price changes are appended to course_price_history. Publishing a paid course without a price returns 400.',
+      'Price changes are appended to course_price_history. Publishing a paid course without a price returns 400. links, when sent, replaces the full list.',
   })
   update(
     @Param('id') id: string,
