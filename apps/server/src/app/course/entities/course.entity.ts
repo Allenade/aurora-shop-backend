@@ -1,6 +1,7 @@
 import { DatabaseEntity, WithTimestamps } from '@app/shared';
 import { Column, Entity, Index, OneToMany } from 'typeorm';
 import { CORE_30_PROGRAM } from '../../program/core30';
+import type { CourseLink } from '../course-links';
 import type { CourseStatus } from '../course-pricing';
 import { CoursePriceHistoryEntity } from './course-price-history.entity';
 
@@ -92,6 +93,10 @@ export class CourseEntity extends DatabaseEntity {
    */
   @Column({ name: 'after_payment_email', type: 'text', nullable: true })
   afterPaymentEmail?: string | null;
+
+  /** Named public links, such as a course structure page. Ordered as saved. */
+  @Column({ type: 'jsonb', default: [] })
+  links: CourseLink[] = [];
 
   @OneToMany(() => CoursePriceHistoryEntity, (row) => row.course)
   priceHistory?: CoursePriceHistoryEntity[];
