@@ -12,6 +12,8 @@ import { CourseSlugReuse1735690200000 } from './migrations/1735690200000-CourseS
 import { CoursePriceHistoryCascade1735690300000 } from './migrations/1735690300000-CoursePriceHistoryCascade';
 import { CourseImageSyllabus1735690400000 } from './migrations/1735690400000-CourseImageSyllabus';
 import { CourseAfterPaymentEmail1735690500000 } from './migrations/1735690500000-CourseAfterPaymentEmail';
+import { EmailCampaignHiddenAt1735690600000 } from './migrations/1735690600000-EmailCampaignHiddenAt';
+import { CourseLinks1735690700000 } from './migrations/1735690700000-CourseLinks';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { CourseAfterPaymentEmail1735690500000 } from './migrations/1735690500000
             CoursePriceHistoryCascade1735690300000,
             CourseImageSyllabus1735690400000,
             CourseAfterPaymentEmail1735690500000,
+            EmailCampaignHiddenAt1735690600000,
+            CourseLinks1735690700000,
           ],
           migrationsRun: true,
           logging: false,

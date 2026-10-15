@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,7 +13,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { AuditLogType, type EnvTypes } from '@app/shared';
 import { Queue, Worker } from 'bullmq';
 import { randomUUID } from 'crypto';
-import { Brackets, DataSource, In, LessThanOrEqual, Repository } from 'typeorm';
+import {
+  Brackets,
+  DataSource,
+  In,
+  IsNull,
+  LessThanOrEqual,
+  Not,
+  Repository,
+} from 'typeorm';
 import { EnterFirstEnrollmentEntity } from '../enter-first/entities/enter-first-enrollment.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CourseEntity } from '../course/entities/course.entity';
@@ -67,7 +76,20 @@ import {
   EmailTemplateEntity,
   type EmailAttachment,
   type EmailAudience,
+  type EmailCampaignStatus,
 } from './entities/email.entities';
+
+const SENT_CAMPAIGN_STATUSES: EmailCampaignStatus[] = [
+  'queued',
+  'sending',
+  'paused',
+  'completed',
+  'cancelled',
+  'failed',
+];
+
+const STILL_SENDING =
+  "This email is still sending. Try again when it's finished.";
 
 type Recipient = {
   enrollment?: EnterFirstEnrollmentEntity;
@@ -342,7 +364,9 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       where: { campaignId: id, status: 'failed' },
     });
     const retryable = failed.filter(
-      (message) => message.lastError !== 'campaign_cancelled',
+      (message) =>
+        message.lastError !== 'campaign_cancelled' &&
+        message.lastError !== 'campaign_deleted',
     );
     for (const message of retryable) {
       message.status = 'queued';
@@ -483,7 +507,19 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
         const campaign = await this.campaigns.findOne({
           where: { id: message.campaignId },
         });
-        if (!campaign || campaign.status === 'paused') {
+        if (!campaign) {
+          await this.messages.update(
+            { id: message.id },
+            {
+              status: 'failed',
+              lastError: 'campaign_deleted',
+              claimToken: null,
+              nextAttemptAt: null,
+            },
+          );
+          continue;
+        }
+        if (campaign.status === 'paused') {
           message.status = 'queued';
           message.attempts = Math.max(0, message.attempts - 1);
           message.claimToken = null;
@@ -1183,16 +1219,13 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     return toMessage(fresh ?? message);
   }
 
-  async listSent() {
+  async listSent(hidden?: string) {
+    const onlyHidden = hidden === 'true';
     const rows = await this.campaigns.find({
-      where: [
-        { status: 'queued' },
-        { status: 'sending' },
-        { status: 'paused' },
-        { status: 'completed' },
-        { status: 'cancelled' },
-        { status: 'failed' },
-      ],
+      where: SENT_CAMPAIGN_STATUSES.map((status) => ({
+        status,
+        hiddenAt: onlyHidden ? Not(IsNull()) : IsNull(),
+      })),
       order: { createdAt: 'DESC' },
       take: 100,
     });
@@ -1205,7 +1238,69 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       sentCount: row.sentCount,
       failedCount: row.failedCount,
       createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
+      hiddenAt: row.hiddenAt?.toISOString?.() ?? row.hiddenAt ?? null,
     }));
+  }
+
+  async hideSent(ids: string[], userId?: string) {
+    const rows = await this.requireSentCampaigns(ids);
+    const now = new Date();
+    for (const row of rows) {
+      if (!row.hiddenAt) row.hiddenAt = now;
+    }
+    await this.campaigns.save(rows);
+    this.auditSentChange('EMAIL_SENT_HIDE', userId, rows);
+    return { ids: rows.map((row) => row.id) };
+  }
+
+  async unhideSent(ids: string[], userId?: string) {
+    const rows = await this.requireSentCampaigns(ids);
+    for (const row of rows) row.hiddenAt = null;
+    await this.campaigns.save(rows);
+    this.auditSentChange('EMAIL_SENT_UNHIDE', userId, rows);
+    return { ids: rows.map((row) => row.id) };
+  }
+
+  async deleteSent(ids: string[], userId?: string) {
+    const unique = uniqueIds(ids);
+    const rows = await this.requireSentCampaigns(unique);
+    if (rows.some((row) => !row.hiddenAt)) {
+      throw new ConflictException('Hide this email before deleting it.');
+    }
+    await this.dataSource.transaction(async (manager) => {
+      const campaigns = manager.getRepository(EmailCampaignEntity);
+      const messages = manager.getRepository(EmailMessageEntity);
+      const locked = await campaigns
+        .createQueryBuilder('c')
+        .setLock('pessimistic_write')
+        .where('c.id IN (:...ids)', { ids: unique })
+        .getMany();
+      if (locked.length !== unique.length) {
+        throw new NotFoundException('Sent email not found');
+      }
+      if (locked.some((row) => !row.hiddenAt)) {
+        throw new ConflictException('Hide this email before deleting it.');
+      }
+      const held = await messages
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .where('m.campaignId IN (:...ids)', { ids: unique })
+        .getMany();
+      if (
+        held.some(
+          (message) =>
+            message.status === 'queued' || message.status === 'sending',
+        )
+      ) {
+        throw new ConflictException(STILL_SENDING);
+      }
+      if (held.length) {
+        await messages.delete({ campaignId: In(unique) });
+      }
+      await campaigns.delete({ id: In(unique) });
+    });
+    this.auditSentChange('EMAIL_SENT_DELETE', userId, rows);
+    return { ids: unique };
   }
 
   async getSent(id: string) {
@@ -1326,6 +1421,38 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     if (configured) return configured.replace(/\/$/, '');
     const port = this.config.get('port', { infer: true });
     return `http://localhost:${port}`;
+  }
+
+  private async requireSentCampaigns(ids: string[]) {
+    const unique = uniqueIds(ids);
+    if (!unique.length) throw new BadRequestException('Choose an email');
+    const rows = await this.campaigns.find({ where: { id: In(unique) } });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const sent = unique.map((id) => byId.get(id));
+    if (
+      sent.some((row) => !row || !SENT_CAMPAIGN_STATUSES.includes(row.status))
+    ) {
+      throw new NotFoundException('Sent email not found');
+    }
+    return sent.filter((row): row is EmailCampaignEntity => Boolean(row));
+  }
+
+  private auditSentChange(
+    action: 'EMAIL_SENT_HIDE' | 'EMAIL_SENT_UNHIDE' | 'EMAIL_SENT_DELETE',
+    userId: string | undefined,
+    rows: EmailCampaignEntity[],
+  ) {
+    if (!this.audit) return;
+    this.audit.log({
+      type: AuditLogType.MUTATION,
+      action,
+      userId,
+      resourceType: 'email',
+      metadata: {
+        ids: rows.map((row) => row.id),
+        subjects: rows.map((row) => row.subject),
+      },
+    });
   }
 
   private storedSelectors(selectors: string[]): string[] {
@@ -1735,8 +1862,13 @@ function toCampaign(row: EmailCampaignEntity) {
     failedCount: row.failedCount,
     selectors: row.selectors ?? [],
     scheduledAt: row.scheduledAt?.toISOString?.() ?? row.scheduledAt ?? null,
+    hiddenAt: row.hiddenAt?.toISOString?.() ?? row.hiddenAt ?? null,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
   };
+}
+
+function uniqueIds(ids: string[]) {
+  return [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
 }
 
 type ComposeSample = {

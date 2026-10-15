@@ -17,6 +17,11 @@ import {
 } from '../storage/storage.service';
 import { coursesForProgram } from './course-catalogue';
 import {
+  CourseLinkError,
+  normalizeCourseLinks,
+  presentCourseLinks,
+} from './course-links';
+import {
   CourseMediaError,
   courseMediaFields,
   normalizeAfterPaymentEmail,
@@ -141,6 +146,7 @@ export class CourseService {
         status,
         sortOrder: dto.sortOrder ?? 0,
         cohort: dto.cohort?.trim() || null,
+        links: await fromMedia(() => normalizeCourseLinks(dto.links)),
         afterPaymentEmail: await fromMedia(() =>
           normalizeAfterPaymentEmail(dto.afterPaymentEmail),
         ),
@@ -196,6 +202,9 @@ export class CourseService {
     if (dto.status !== undefined) row.status = dto.status;
     if (dto.sortOrder !== undefined) row.sortOrder = dto.sortOrder;
     if (dto.cohort !== undefined) row.cohort = dto.cohort?.trim() || null;
+    if (dto.links !== undefined) {
+      row.links = await fromMedia(() => normalizeCourseLinks(dto.links));
+    }
     if (dto.afterPaymentEmail !== undefined) {
       row.afterPaymentEmail = await fromMedia(() =>
         normalizeAfterPaymentEmail(dto.afterPaymentEmail),
@@ -570,6 +579,7 @@ export class CourseService {
       sortOrder: row.sortOrder,
       cohort: row.cohort ?? null,
       ...courseMediaFields(row),
+      links: presentCourseLinks(row.links),
     };
   }
 
@@ -590,7 +600,7 @@ async function fromMedia<T>(work: () => Promise<T> | T): Promise<T> {
   try {
     return await work();
   } catch (err) {
-    if (err instanceof CourseMediaError) {
+    if (err instanceof CourseMediaError || err instanceof CourseLinkError) {
       throw new BadRequestException(err.message);
     }
     throw err;
