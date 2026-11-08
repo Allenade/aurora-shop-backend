@@ -72,6 +72,33 @@ export class EnterFirstEnrollmentEntity extends DatabaseEntity {
   @Column({ name: 'price_snapshot', type: 'jsonb', default: [] })
   priceSnapshot: EnterFirstPriceLine[];
 
+  /** Pre-invite catalogue total in major units. */
+  @Column({ name: 'list_amount', type: 'int', nullable: true })
+  listAmount?: number | null;
+
+  /** How the charged amount was derived. */
+  @Column({
+    name: 'pricing_type',
+    type: 'varchar',
+    length: 16,
+    default: 'full',
+  })
+  pricingType: 'full' | 'discount' | 'free';
+
+  @Column({ name: 'invite_id', type: 'uuid', nullable: true })
+  inviteId?: string | null;
+
+  @Column({ name: 'invite_code', type: 'varchar', length: 32, nullable: true })
+  inviteCode?: string | null;
+
+  @Column({
+    name: 'discount_label',
+    type: 'varchar',
+    length: 80,
+    nullable: true,
+  })
+  discountLabel?: string | null;
+
   @Column({ name: 'payment_status', type: 'varchar', default: 'pending' })
   paymentStatus: EnterFirstPaymentStatus;
 
