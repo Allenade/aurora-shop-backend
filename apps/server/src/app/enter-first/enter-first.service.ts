@@ -41,6 +41,7 @@ import {
   isSuperAdminRole,
   roleSlugs,
 } from './enrollment-removal';
+import { EnterFirstInviteService } from './enter-first-invite.service';
 import {
   EnterFirstEnrollmentEntity,
   type EnterFirstFormPayload,
@@ -60,6 +61,7 @@ export class EnterFirstService {
     @InjectRepository(EnterFirstEnrollmentEntity)
     private readonly enrollments: Repository<EnterFirstEnrollmentEntity>,
     private readonly courses: CourseService,
+    private readonly invites: EnterFirstInviteService,
     private readonly paystack: PaystackProvider,
     private readonly emails: EmailService,
     private readonly config: ConfigService<EnvTypes, true>,
@@ -90,7 +92,7 @@ export class EnterFirstService {
     const tracks = [
       ...new Set(dto.tracks.map((t) => t.trim()).filter(Boolean)),
     ];
-    const priced = await this.courses.quote(tracks);
+    const quoted = await this.courses.quote(tracks);
 
     const form: EnterFirstFormPayload = {
       firstName: dto.firstName.trim(),
@@ -109,43 +111,94 @@ export class EnterFirstService {
       joinedCommunity: dto.joinedCommunity?.trim(),
     };
 
+    let priced: {
+      amount: number;
+      currency: string;
+      lines: typeof quoted.lines;
+      listAmount: number;
+      pricingType: 'full' | 'discount' | 'free';
+      discountLabel: string | null;
+      inviteId: string | null;
+      inviteCode: string | null;
+    } = {
+      amount: quoted.amount,
+      currency: quoted.currency,
+      lines: quoted.lines,
+      listAmount: quoted.amount,
+      pricingType: quoted.amount <= 0 ? 'free' : 'full',
+      discountLabel: null,
+      inviteId: null,
+      inviteCode: null,
+    };
+
     const minor = dto.dateOfBirth ? isUnder18(dto.dateOfBirth) : null;
     const consented = Boolean(
       dto.termsAccepted || dto.termsVersion || dto.privacyVersion,
     );
     const reference = this.nextReference();
-    const row = await this.enrollments.save(
-      this.enrollments.create({
-        source: 'enter_first',
-        program: CORE_30_PROGRAM,
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        phone: form.phone,
-        tracks,
-        amount: priced.amount,
-        currency: priced.currency,
-        priceSnapshot: priced.lines,
-        paymentStatus: 'pending',
-        paystackReference: reference,
-        form,
-        termsVersion: dto.termsVersion?.trim() || null,
-        privacyVersion: dto.privacyVersion?.trim() || null,
-        consentAt: consented ? new Date() : null,
-        marketingOptIn: dto.marketingOptIn === true,
-        consentIp: meta.ip?.slice(0, 64) || null,
-        consentUserAgent: meta.userAgent?.slice(0, 512) || null,
-        ageConfirmed: dto.ageConfirmed ?? null,
-        dateOfBirth: dto.dateOfBirth ?? null,
-        isMinor: minor,
-        guardianName: dto.guardianName?.trim() || null,
-        guardianEmail: dto.guardianEmail?.trim().toLowerCase() || null,
-        guardianConsent: dto.guardianConsent ?? null,
-        guardianConsentAt: dto.guardianConsent ? new Date() : null,
-        amountMismatch: false,
-        currencyMismatch: false,
-      }),
-    );
+    const inviteCode = dto.inviteCode?.trim();
+
+    // Lock invite + save enrollment together so a one-use link cannot be
+    // double-redeemed, and a failed save does not burn the invite.
+    const row = await this.dataSource.transaction(async (manager) => {
+      if (inviteCode) {
+        const redeemed = await this.invites.redeemForEnroll({
+          code: inviteCode,
+          email: form.email,
+          quote: quoted,
+          commit: true,
+          manager,
+        });
+        priced = {
+          amount: redeemed.amount,
+          currency: redeemed.currency,
+          lines: redeemed.lines,
+          listAmount: redeemed.listAmount,
+          pricingType: redeemed.pricingType,
+          discountLabel: redeemed.discountLabel,
+          inviteId: redeemed.invite.id,
+          inviteCode: redeemed.invite.code,
+        };
+      }
+
+      return manager.getRepository(EnterFirstEnrollmentEntity).save(
+        manager.getRepository(EnterFirstEnrollmentEntity).create({
+          source: 'enter_first',
+          program: CORE_30_PROGRAM,
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email,
+          phone: form.phone,
+          tracks,
+          amount: priced.amount,
+          currency: priced.currency,
+          priceSnapshot: priced.lines,
+          listAmount: priced.listAmount,
+          pricingType: priced.pricingType,
+          inviteId: priced.inviteId,
+          inviteCode: priced.inviteCode,
+          discountLabel: priced.discountLabel,
+          paymentStatus: 'pending',
+          paystackReference: reference,
+          form,
+          termsVersion: dto.termsVersion?.trim() || null,
+          privacyVersion: dto.privacyVersion?.trim() || null,
+          consentAt: consented ? new Date() : null,
+          marketingOptIn: dto.marketingOptIn === true,
+          consentIp: meta.ip?.slice(0, 64) || null,
+          consentUserAgent: meta.userAgent?.slice(0, 512) || null,
+          ageConfirmed: dto.ageConfirmed ?? null,
+          dateOfBirth: dto.dateOfBirth ?? null,
+          isMinor: minor,
+          guardianName: dto.guardianName?.trim() || null,
+          guardianEmail: dto.guardianEmail?.trim().toLowerCase() || null,
+          guardianConsent: dto.guardianConsent ?? null,
+          guardianConsentAt: dto.guardianConsent ? new Date() : null,
+          amountMismatch: false,
+          currencyMismatch: false,
+        }),
+      );
+    });
 
     if (priced.amount <= 0) {
       row.paymentStatus = 'success';
@@ -686,6 +739,11 @@ export class EnterFirstService {
       amount: row.amount,
       currency: row.currency,
       priceSnapshot: row.priceSnapshot ?? [],
+      listAmount: row.listAmount ?? row.amount,
+      pricingType: row.pricingType ?? 'full',
+      inviteId: row.inviteId ?? null,
+      inviteCode: row.inviteCode ?? null,
+      discountLabel: row.discountLabel ?? null,
       paymentStatus: row.paymentStatus,
       paystackReference: row.paystackReference ?? null,
       authorizationUrl: maskPii ? null : (row.authorizationUrl ?? null),

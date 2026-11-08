@@ -134,6 +134,15 @@ export class EnterFirstEnrollDto {
   })
   tracks: string[];
 
+  @IsString()
+  @IsOptional()
+  @MaxLength(32)
+  @ApiPropertyOptional({
+    description:
+      'Optional invite code from ?invite=. Server applies free/discount rules.',
+  })
+  inviteCode?: string;
+
   @IsBoolean()
   @IsOptional()
   @ApiPropertyOptional({ description: 'Must be true when sent.' })
