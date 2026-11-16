@@ -49,7 +49,7 @@ export class EnterFirstController {
     operationId: 'createEnterFirstEnrollment',
     summary: 'Enroll + start Paystack',
     description:
-      'Public website enrollment. The enrollment is stored under program Core 3.0 with the selected course tracks. Price is loaded from the course table. Optional inviteCode applies free or discount rules server-side. A course is accepted only when it is published (status open), belongs to Core 3.0, and has a price set, or is free. Draft, closed, archived, full, and unpaid courses are rejected. A course after its enrollment cutoff is rejected as closed. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0.',
+      'Public website enrollment. The enrollment is stored under program Core 3.0 with the selected course tracks. Price is loaded from the course table. Optional couponCode (or inviteCode) applies staff-set percent or free rules server-side. A course is accepted only when it is published (status open), belongs to Core 3.0, and has a price set, or is free. Draft, closed, archived, full, and unpaid courses are rejected. A course after its enrollment cutoff is rejected as closed. Initializes Paystack, including Pay with Transfer, when the amount is greater than 0. Amount 0 skips Paystack.',
   })
   enroll(@Body() body: EnterFirstEnrollDto, @Req() req: Request) {
     return this.enterFirst.enroll(body, {
@@ -76,11 +76,24 @@ export class EnterFirstController {
   @Get('enter-first/invites/:code')
   @ApiOperation({
     operationId: 'resolveEnterFirstInvite',
-    summary: 'Resolve invite for enroll form',
+    summary: 'Resolve coupon for enroll form',
     description:
-      'Public preview of an invite offer. Does not redeem. Returns 404 when missing or inactive.',
+      'Public preview of a coupon offer. Does not redeem. Returns 404 when missing or inactive.',
   })
   resolveInvite(@Param('code') code: string) {
+    return this.invites.resolvePublic(code);
+  }
+
+  @Public()
+  @UseGuards(PublicEndpointThrottlerGuard)
+  @Get('enter-first/coupons/:code')
+  @ApiOperation({
+    operationId: 'resolveEnterFirstCoupon',
+    summary: 'Resolve coupon for enroll form',
+    description:
+      'Same as GET /enter-first/invites/:code. Public preview of a coupon. Does not redeem.',
+  })
+  resolveCoupon(@Param('code') code: string) {
     return this.invites.resolvePublic(code);
   }
 
@@ -234,7 +247,7 @@ export class EnterFirstController {
   @RequirePermissions({ action: Action.LIST, resource: Resource.ENTER_FIRST })
   @ApiOperation({
     operationId: 'listEnterFirstInvites',
-    summary: 'List invite links',
+    summary: 'List coupons',
   })
   async listInvites(
     @CurrentUser() user: JwtPayload,
@@ -256,7 +269,7 @@ export class EnterFirstController {
   @RequirePermissions({ action: Action.READ, resource: Resource.ENTER_FIRST })
   @ApiOperation({
     operationId: 'getEnterFirstInvite',
-    summary: 'Get invite link',
+    summary: 'Get coupon',
   })
   async getInvite(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     const maskPii = await this.pii.shouldMaskPii(user.sub);
@@ -268,9 +281,9 @@ export class EnterFirstController {
   @RequirePermissions({ action: Action.CREATE, resource: Resource.ENTER_FIRST })
   @ApiOperation({
     operationId: 'createEnterFirstInvite',
-    summary: 'Create invite link',
+    summary: 'Create coupon',
     description:
-      'Creates a discount or free enroll link. Offer rules are applied server-side on enroll.',
+      'Creates a coupon with a staff-chosen code and percent off, or free. Applied server-side on enroll.',
   })
   createInvite(
     @Body() body: CreateInviteDto,
@@ -284,7 +297,7 @@ export class EnterFirstController {
   @RequirePermissions({ action: Action.UPDATE, resource: Resource.ENTER_FIRST })
   @ApiOperation({
     operationId: 'updateEnterFirstInvite',
-    summary: 'Update invite link',
+    summary: 'Update coupon',
   })
   updateInvite(
     @Param('id') id: string,
@@ -299,9 +312,9 @@ export class EnterFirstController {
   @RequirePermissions({ action: Action.UPDATE, resource: Resource.ENTER_FIRST })
   @ApiOperation({
     operationId: 'deleteEnterFirstInvite',
-    summary: 'Soft-delete invite link',
+    summary: 'Soft-delete coupon',
     description:
-      'Removes the invite. The enroll URL stops working. Paid enrollments stay.',
+      'Removes the coupon. The code stops working on the website. Paid enrollments stay.',
   })
   deleteInvite(@Param('id') id: string, @CurrentUser('sub') userId: string) {
     return this.invites.remove(id, userId);

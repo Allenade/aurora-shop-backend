@@ -67,6 +67,22 @@ describe('applyInviteToQuote', () => {
     expect(result.discountLabel).toBe('20% off');
   });
 
+  it('makes a track free when percent is 100', () => {
+    const quote = {
+      amount: 60_000,
+      currency: 'NGN',
+      lines: lines([['iot', 60_000]]),
+    };
+    const result = applyInviteToQuote(quote, {
+      offerType: 'discount_percent',
+      discountPercent: 100,
+      trackScope: 'all',
+      trackSlugs: [],
+    });
+    expect(result.amount).toBe(0);
+    expect(result.pricingType).toBe('free');
+  });
+
   it('applies fixed discount across covered tracks', () => {
     const quote = {
       amount: 120_000,

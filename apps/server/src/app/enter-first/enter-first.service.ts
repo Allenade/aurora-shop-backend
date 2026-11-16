@@ -136,7 +136,7 @@ export class EnterFirstService {
       dto.termsAccepted || dto.termsVersion || dto.privacyVersion,
     );
     const reference = this.nextReference();
-    const inviteCode = dto.inviteCode?.trim();
+    const inviteCode = (dto.couponCode ?? dto.inviteCode)?.trim();
 
     // Lock invite + save enrollment together so a one-use link cannot be
     // double-redeemed, and a failed save does not burn the invite.

@@ -107,7 +107,7 @@ export class EnterFirstInviteService {
       );
     }
 
-    const code = await this.nextUniqueCode();
+    const code = await this.allocateCode(dto.code);
     const row = await this.invites.save(
       this.invites.create({
         code,
@@ -201,7 +201,7 @@ export class EnterFirstInviteService {
       where: { code: code.trim().toLowerCase() },
     });
     if (!row || !row.active) {
-      throw new NotFoundException('Invite not found');
+      throw new NotFoundException('Coupon not found');
     }
     this.assertUsable(row);
     return {
@@ -241,7 +241,7 @@ export class EnterFirstInviteService {
         .andWhere('invite.deleted_at IS NULL')
         .getOne();
       if (!row || !row.active) {
-        throw new BadRequestException('Invite is not valid');
+        throw new BadRequestException('Coupon is not valid');
       }
       this.assertUsable(row);
 
@@ -254,7 +254,7 @@ export class EnterFirstInviteService {
           person.email.trim().toLowerCase() !== opts.email.trim().toLowerCase()
         ) {
           throw new BadRequestException(
-            'This invite is locked to a different email address',
+            'This coupon is locked to a different email address',
           );
         }
       }
@@ -289,14 +289,39 @@ export class EnterFirstInviteService {
 
   private assertUsable(row: EnterFirstInviteEntity) {
     if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('Invite has expired');
+      throw new BadRequestException('Coupon has expired');
     }
     if (
       row.maxRedemptions != null &&
       row.redemptionCount >= row.maxRedemptions
     ) {
-      throw new BadRequestException('Invite has no redemptions left');
+      throw new BadRequestException('Coupon has no uses left');
     }
+  }
+
+  private normalizeCode(raw: string) {
+    const code = raw.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(code)) {
+      throw new BadRequestException(
+        'Coupon code must be 3–32 letters, numbers, hyphens, or underscores',
+      );
+    }
+    return code;
+  }
+
+  private async allocateCode(requested?: string) {
+    if (requested?.trim()) {
+      const code = this.normalizeCode(requested);
+      const existing = await this.invites.findOne({
+        where: { code },
+        withDeleted: true,
+      });
+      if (existing) {
+        throw new BadRequestException('Coupon code already in use');
+      }
+      return code;
+    }
+    return this.nextUniqueCode();
   }
 
   private async nextUniqueCode() {
@@ -308,7 +333,7 @@ export class EnterFirstInviteService {
       });
       if (!existing) return code;
     }
-    throw new BadRequestException('Could not allocate invite code');
+    throw new BadRequestException('Could not allocate coupon code');
   }
 
   private websiteOrigin() {
@@ -332,7 +357,7 @@ export class EnterFirstInviteService {
 
   private async findOrThrow(id: string) {
     const row = await this.invites.findOne({ where: { id } });
-    if (!row) throw new NotFoundException('Invite not found');
+    if (!row) throw new NotFoundException('Coupon not found');
     return row;
   }
 
@@ -367,7 +392,7 @@ export class EnterFirstInviteService {
       active: row.active,
       notes: row.notes ?? null,
       discountLabel: this.offerLabel(row),
-      enrollUrl: `${origin}/core-3/enroll?invite=${encodeURIComponent(row.code)}`,
+      enrollUrl: `${origin}/core-3/enroll?coupon=${encodeURIComponent(row.code)}`,
       createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
       updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
     };

@@ -29,6 +29,16 @@ const TRACK_SCOPES: InviteTrackScope[] = ['all', 'selected'];
 export class CreateInviteDto {
   @IsString()
   @IsOptional()
+  @MaxLength(32)
+  @ApiPropertyOptional({
+    description:
+      'Staff-chosen coupon code (letters, numbers, hyphen, underscore). Generated if omitted.',
+    example: 'AURORA20',
+  })
+  code?: string;
+
+  @IsString()
+  @IsOptional()
   @MaxLength(160)
   @ApiPropertyOptional()
   label?: string;
