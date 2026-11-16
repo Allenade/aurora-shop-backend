@@ -47,8 +47,10 @@ export const COMPLIANCE_MANAGER_GRANTS: Array<{
   resource: Resource;
 }> = [
   ...COMPLIANCE_READ,
+  { action: Action.CREATE, resource: Resource.ENTER_FIRST },
   { action: Action.UPDATE, resource: Resource.ENTER_FIRST },
   { action: Action.CREATE, resource: Resource.EMAIL },
+
   { action: Action.UPDATE, resource: Resource.EMAIL },
   { action: Action.CREATE, resource: Resource.REFUND },
   { action: Action.UPDATE, resource: Resource.REFUND },

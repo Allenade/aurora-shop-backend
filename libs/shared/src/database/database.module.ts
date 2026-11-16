@@ -14,6 +14,7 @@ import { CourseImageSyllabus1735690400000 } from './migrations/1735690400000-Cou
 import { CourseAfterPaymentEmail1735690500000 } from './migrations/1735690500000-CourseAfterPaymentEmail';
 import { EmailCampaignHiddenAt1735690600000 } from './migrations/1735690600000-EmailCampaignHiddenAt';
 import { CourseLinks1735690700000 } from './migrations/1735690700000-CourseLinks';
+import { EnterFirstPeopleInvites1735690800000 } from './migrations/1735690800000-EnterFirstPeopleInvites';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { CourseLinks1735690700000 } from './migrations/1735690700000-CourseLinks
             CourseAfterPaymentEmail1735690500000,
             EmailCampaignHiddenAt1735690600000,
             CourseLinks1735690700000,
+            EnterFirstPeopleInvites1735690800000,
           ],
           migrationsRun: true,
           logging: false,

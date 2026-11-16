@@ -134,6 +134,24 @@ export class EnterFirstEnrollDto {
   })
   tracks: string[];
 
+  @IsString()
+  @IsOptional()
+  @MaxLength(32)
+  @ApiPropertyOptional({
+    description:
+      'Optional coupon code from the enroll form. Server applies percent or free rules. Same as couponCode.',
+  })
+  inviteCode?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(32)
+  @ApiPropertyOptional({
+    description:
+      'Alias of inviteCode. Prefer this on the website coupon field.',
+  })
+  couponCode?: string;
+
   @IsBoolean()
   @IsOptional()
   @ApiPropertyOptional({ description: 'Must be true when sent.' })

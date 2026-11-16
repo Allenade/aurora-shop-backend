@@ -28,6 +28,7 @@ describe('compliance roles', () => {
 
   it('lets a compliance manager re-verify, refund, and email without editing courses', () => {
     const grants = COMPLIANCE_MANAGER_GRANTS;
+    expect(allows(grants, Action.CREATE, Resource.ENTER_FIRST)).toBe(true);
     expect(allows(grants, Action.UPDATE, Resource.ENTER_FIRST)).toBe(true);
     expect(allows(grants, Action.CREATE, Resource.REFUND)).toBe(true);
     expect(allows(grants, Action.UPDATE, Resource.REFUND)).toBe(true);
