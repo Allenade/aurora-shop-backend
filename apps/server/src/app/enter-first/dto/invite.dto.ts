@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsEmail,
   IsISO8601,
   IsOptional,
   IsString,
@@ -55,6 +56,16 @@ export class CreateInviteDto {
       'When personId is set, require enroll email to match. Default true.',
   })
   lockToPerson?: boolean;
+
+  @IsEmail()
+  @IsOptional()
+  @MaxLength(254)
+  @ApiPropertyOptional({
+    description:
+      'Required for free or 100% coupons. Enroll email must match. Optional for percent coupons; if set, only this email can use the code.',
+    example: 'ada@example.com',
+  })
+  allowedEmail?: string;
 
   @IsIn(OFFER_TYPES)
   @ApiProperty({ enum: OFFER_TYPES })

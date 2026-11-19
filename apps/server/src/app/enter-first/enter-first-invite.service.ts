@@ -12,6 +12,8 @@ import { DataSource, ILike, In, type EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import type { QuoteLine } from '../course/course-pricing';
 import type { CreateInviteDto, UpdateInviteDto } from './dto/invite.dto';
+import { isPersonalCoupon, normalizeCouponEmail } from './coupon-email';
+import { EnterFirstEnrollmentEntity } from './entities/enter-first-enrollment.entity';
 import { EnterFirstInviteEntity } from './entities/enter-first-invite.entity';
 import { EnterFirstPersonEntity } from './entities/enter-first-person.entity';
 import { applyInviteToQuote, type PricingType } from './invite-pricing';
@@ -107,6 +109,13 @@ export class EnterFirstInviteService {
       );
     }
 
+    const allowedEmail = normalizeCouponEmail(dto.allowedEmail);
+    if (isPersonalCoupon(dto.offerType, dto.discountPercent) && !allowedEmail) {
+      throw new BadRequestException(
+        'Enter the student email for a free coupon',
+      );
+    }
+
     const code = await this.allocateCode(dto.code);
     const row = await this.invites.save(
       this.invites.create({
@@ -114,6 +123,7 @@ export class EnterFirstInviteService {
         label: dto.label?.trim() || null,
         personId: dto.personId ?? null,
         lockToPerson: dto.lockToPerson ?? Boolean(dto.personId),
+        allowedEmail,
         offerType: dto.offerType,
         discountPercent:
           dto.offerType === 'discount_percent' ? dto.discountPercent! : null,
@@ -214,6 +224,9 @@ export class EnterFirstInviteService {
       trackSlugs: row.trackSlugs ?? [],
       expiresAt: row.expiresAt?.toISOString?.() ?? row.expiresAt ?? null,
       lockToPerson: row.lockToPerson && Boolean(row.personId),
+      lockToEmail:
+        Boolean(row.allowedEmail) ||
+        (row.lockToPerson && Boolean(row.personId)),
       discountLabel: this.offerLabel(row),
     };
   }
@@ -245,18 +258,40 @@ export class EnterFirstInviteService {
       }
       this.assertUsable(row);
 
-      if (row.personId && row.lockToPerson) {
-        const person = await manager
-          .getRepository(EnterFirstPersonEntity)
-          .findOne({ where: { id: row.personId } });
-        if (
-          !person ||
-          person.email.trim().toLowerCase() !== opts.email.trim().toLowerCase()
-        ) {
+      const email = opts.email.trim().toLowerCase();
+      if (row.allowedEmail) {
+        if (row.allowedEmail.trim().toLowerCase() !== email) {
           throw new BadRequestException(
             'This coupon is locked to a different email address',
           );
         }
+      }
+
+      if (row.personId && row.lockToPerson) {
+        const person = await manager
+          .getRepository(EnterFirstPersonEntity)
+          .findOne({ where: { id: row.personId } });
+        if (!person || person.email.trim().toLowerCase() !== email) {
+          throw new BadRequestException(
+            'This coupon is locked to a different email address',
+          );
+        }
+      }
+
+      const alreadyUsed = await manager
+        .getRepository(EnterFirstEnrollmentEntity)
+        .createQueryBuilder('enrollment')
+        .where('enrollment.invite_id = :inviteId', { inviteId: row.id })
+        .andWhere('LOWER(enrollment.email) = :email', { email })
+        .andWhere('enrollment.payment_status IN (:...statuses)', {
+          statuses: ['success', 'pending', 'refunded'],
+        })
+        .andWhere('enrollment.deleted_at IS NULL')
+        .getExists();
+      if (alreadyUsed) {
+        throw new BadRequestException(
+          'This email has already used this coupon',
+        );
       }
 
       const priced = applyInviteToQuote(opts.quote, row);
@@ -381,6 +416,14 @@ export class EnterFirstInviteService {
           }
         : null,
       lockToPerson: row.lockToPerson,
+      allowedEmail: row.allowedEmail
+        ? maskPii
+          ? maskEmail(row.allowedEmail)
+          : row.allowedEmail
+        : null,
+      lockToEmail:
+        Boolean(row.allowedEmail) ||
+        (row.lockToPerson && Boolean(row.personId)),
       offerType: row.offerType,
       discountPercent: row.discountPercent ?? null,
       discountAmount: row.discountAmount ?? null,

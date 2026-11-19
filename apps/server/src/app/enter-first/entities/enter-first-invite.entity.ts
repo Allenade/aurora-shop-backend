@@ -26,6 +26,18 @@ export class EnterFirstInviteEntity extends DatabaseEntity {
   @Column({ name: 'lock_to_person', type: 'boolean', default: true })
   lockToPerson: boolean;
 
+  /**
+   * When set, enroll email must match. Required for free / 100% coupons.
+   */
+  @Index()
+  @Column({
+    name: 'allowed_email',
+    type: 'varchar',
+    length: 254,
+    nullable: true,
+  })
+  allowedEmail?: string | null;
+
   @Column({ name: 'offer_type', type: 'varchar', length: 32 })
   offerType: InviteOfferType;
 
