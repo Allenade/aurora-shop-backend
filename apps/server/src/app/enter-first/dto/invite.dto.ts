@@ -57,15 +57,26 @@ export class CreateInviteDto {
   })
   lockToPerson?: boolean;
 
-  @IsEmail()
+  @IsString()
   @IsOptional()
-  @MaxLength(254)
+  @MaxLength(12000)
   @ApiPropertyOptional({
     description:
-      'Required for free or 100% coupons. Enroll email must match. Optional for percent coupons; if set, only this email can use the code.',
-    example: 'ada@example.com',
+      'Optional list of student emails, separated by commas, semicolons, or new lines. Empty means a shared code, including free coupons. If set, only these emails can use the code, once each.',
+    example: 'ada@example.com, bola@example.com',
   })
   allowedEmail?: string;
+
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxSize(100)
+  @IsEmail({}, { each: true })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Same lock as allowedEmail, as an array. Merged with allowedEmail when both are sent.',
+  })
+  allowedEmails?: string[];
 
   @IsIn(OFFER_TYPES)
   @ApiProperty({ enum: OFFER_TYPES })

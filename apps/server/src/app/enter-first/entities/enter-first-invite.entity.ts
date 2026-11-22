@@ -27,16 +27,11 @@ export class EnterFirstInviteEntity extends DatabaseEntity {
   lockToPerson: boolean;
 
   /**
-   * When set, enroll email must match. Required for free / 100% coupons.
+   * When non-empty, enroll email must be in this list.
+   * Empty means anyone can use the code, once per email, including free coupons.
    */
-  @Index()
-  @Column({
-    name: 'allowed_email',
-    type: 'varchar',
-    length: 254,
-    nullable: true,
-  })
-  allowedEmail?: string | null;
+  @Column({ name: 'allowed_emails', type: 'jsonb', default: [] })
+  allowedEmails: string[];
 
   @Column({ name: 'offer_type', type: 'varchar', length: 32 })
   offerType: InviteOfferType;
