@@ -16,6 +16,7 @@ import { EmailCampaignHiddenAt1735690600000 } from './migrations/1735690600000-E
 import { CourseLinks1735690700000 } from './migrations/1735690700000-CourseLinks';
 import { EnterFirstPeopleInvites1735690800000 } from './migrations/1735690800000-EnterFirstPeopleInvites';
 import { CouponAllowedEmail1735690900000 } from './migrations/1735690900000-CouponAllowedEmail';
+import { CouponAllowedEmails1735691000000 } from './migrations/1735691000000-CouponAllowedEmails';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { CouponAllowedEmail1735690900000 } from './migrations/1735690900000-Coup
             CourseLinks1735690700000,
             EnterFirstPeopleInvites1735690800000,
             CouponAllowedEmail1735690900000,
+            CouponAllowedEmails1735691000000,
           ],
           migrationsRun: true,
           logging: false,
